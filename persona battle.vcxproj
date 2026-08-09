@@ -76,18 +76,22 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <IncludePath>$(FMODDir)api\core\inc;$(DXSDK_DIR)include\;$(IncludePath)</IncludePath>
     <LibraryPath>$(FMODDir)api\core\lib\x86;$(DXSDK_DIR)lib\x86;$(LibraryPath)</LibraryPath>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(FMODDir)api\core\inc;$(DXSDK_DIR)include\;$(IncludePath)</IncludePath>
     <LibraryPath>$(FMODDir)api\core\lib\x86;$(DXSDK_DIR)lib\x86;$(LibraryPath)</LibraryPath>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>$(FMODDir)api\core\inc;$(DXSDK_DIR)include\;$(IncludePath)</IncludePath>
     <LibraryPath>$(FMODDir)api\core\lib\x64;$(DXSDK_DIR)lib\x64;$(LibraryPath)</LibraryPath>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(FMODDir)api\core\inc;$(DXSDK_DIR)include\;$(IncludePath)</IncludePath>
     <LibraryPath>$(FMODDir)api\core\lib\x64;$(DXSDK_DIR)lib\x64;$(LibraryPath)</LibraryPath>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -106,7 +110,8 @@
 dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x86\fmod.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x86\fmod.dll" "$(OutDir)"
+xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -129,7 +134,8 @@ dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>d3d9.lib;d3dx9.lib;dinput8.lib;dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x86\fmod.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x86\fmod.dll" "$(OutDir)"
+xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -150,7 +156,8 @@ dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>d3d9.lib;d3dx9.lib;dinput8.lib;dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x64\fmod.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x64\fmod.dll" "$(OutDir)"
+xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -173,7 +180,8 @@ dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies>d3d9.lib;d3dx9.lib;dinput8.lib;dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x64\fmod.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(FMODDir)api\core\lib\x64\fmod.dll" "$(OutDir)"
+xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     </PostBuildEvent>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -189,6 +197,7 @@ dxguid.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
     <ClCompile Include="game_logic.cpp" />
     <ClCompile Include="input.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="paths.cpp" />
     <ClCompile Include="renderer.cpp" />
   </ItemGroup>
   <ItemGroup>

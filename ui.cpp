@@ -6,6 +6,7 @@ static LPDIRECT3DTEXTURE9 g_MakotoIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_JokerIconTex = nullptr;
 static ID3DXFont* g_HudFont = nullptr;
 static bool g_HudFontLoaded = false;
+static const char* g_LoadedHudFontPath = nullptr;
 
 struct HudHealthTracker {
     float displayHealth = 0.0f;
@@ -26,24 +27,40 @@ static bool LoadHudFont() {
         return g_HudFont != nullptr;
     }
 
-    if (AddFontResourceExA("assets/font/font.TTF", FR_PRIVATE, 0) == 0) {
-        return false;
+    const char* fontCandidates[] = { HUD_FONT_FILE, HUD_FONT_FILE_ALT };
+    for (const char* path : fontCandidates) {
+        if (AddFontResourceExA(path, FR_PRIVATE, 0) != 0) {
+            g_LoadedHudFontPath = path;
+            break;
+        }
     }
 
     g_HudFontLoaded = true;
-    HRESULT hr = D3DXCreateFontA(
-        g_pD3DDevice,
-        28,
-        0,
-        FW_BOLD,
-        1,
-        FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE,
-        "BM space",
-        &g_HudFont);
+
+    auto tryCreateFont = [](const char* familyName) -> HRESULT {
+        return D3DXCreateFontA(
+            g_pD3DDevice,
+            28,
+            0,
+            FW_BOLD,
+            1,
+            FALSE,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE,
+            familyName,
+            &g_HudFont);
+    };
+
+    HRESULT hr = tryCreateFont(HUD_FONT_FAMILY);
+    if (FAILED(hr) || !g_HudFont) {
+        if (g_HudFont) {
+            g_HudFont->Release();
+            g_HudFont = nullptr;
+        }
+        hr = tryCreateFont("Arial");
+    }
 
     return SUCCEEDED(hr) && g_HudFont != nullptr;
 }
@@ -247,8 +264,9 @@ void CleanUpHudTextures() {
         g_HudFont->Release();
         g_HudFont = nullptr;
     }
-    if (g_HudFontLoaded) {
-        RemoveFontResourceExA("assets/font/font.TTF", FR_PRIVATE, 0);
+    if (g_HudFontLoaded && g_LoadedHudFontPath) {
+        RemoveFontResourceExA(g_LoadedHudFontPath, FR_PRIVATE, 0);
+        g_LoadedHudFontPath = nullptr;
         g_HudFontLoaded = false;
     }
     if (g_MakotoIconTex) {

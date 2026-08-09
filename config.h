@@ -135,6 +135,9 @@ inline constexpr float HUD_HP_BAR_HEIGHT = 16.0f;
 inline constexpr float HUD_SP_BAR_HEIGHT = 10.0f;
 inline constexpr float HUD_BAR_GAP = 5.0f;
 inline constexpr float HUD_NAME_OFFSET_Y = -22.0f;
+inline constexpr const char* HUD_FONT_FILE = "assets/font/BMSPA___.TTF";
+inline constexpr const char* HUD_FONT_FILE_ALT = "assets/font/font.TTF";
+inline constexpr const char* HUD_FONT_FAMILY = "BM space";
 inline constexpr int MAKOTO_CELL_SIZE = 256;
 inline constexpr int GAME_ANIMATION_FPS = 60;
 inline constexpr int MAKOTO_LOOP_TICKS_SLOW = 4;
@@ -435,6 +438,7 @@ struct AttackData {
 };
 
 void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DCOLOR color);
+void EnsureGameWorkingDirectory();
 
 // ============ 外部攻击数据结构 ============
 extern AttackData attackHitbox;
