@@ -1,0 +1,22 @@
+﻿  main.cpp
+C:\Users\limru\OneDrive\Documents\.Assignment\Degree\Year2Semester1\BMC2224 Computer Game Programming\config.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+  (compiling source file 'main.cpp')
+  
+  C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\include\dinput.h: DIRECTINPUT_VERSION undefined. Defaulting to version 0x0800
+C:\Users\limru\OneDrive\Documents\.Assignment\Degree\Year2Semester1\BMC2224 Computer Game Programming\player\joker\JokerAssets.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+  (compiling source file 'main.cpp')
+  
+  menuMain.cpp
+C:\Users\limru\OneDrive\Documents\.Assignment\Degree\Year2Semester1\BMC2224 Computer Game Programming\config.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+  (compiling source file 'menuMain.cpp')
+  
+  C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\include\dinput.h: DIRECTINPUT_VERSION undefined. Defaulting to version 0x0800
+  stageSelect.cpp
+C:\Users\limru\OneDrive\Documents\.Assignment\Degree\Year2Semester1\BMC2224 Computer Game Programming\config.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (932). Save the file in Unicode format to prevent data loss
+  (compiling source file 'stageSelect.cpp')
+  
+  C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\include\dinput.h: DIRECTINPUT_VERSION undefined. Defaulting to version 0x0800
+  Generating Code...
+  persona battle.vcxproj -> C:\Users\limru\OneDrive\Documents\.Assignment\Degree\Year2Semester1\BMC2224 Computer Game Programming\x64\Debug\persona battle.exe
+  0 File(s) copied
+  0 File(s) copied
