@@ -438,7 +438,6 @@ struct AttackData {
 };
 
 void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DCOLOR color);
-void EnsureGameWorkingDirectory();
 
 // ============ 外部攻击数据结构 ============
 extern AttackData attackHitbox;
