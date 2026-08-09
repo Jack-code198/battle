@@ -24,7 +24,6 @@ AttackData attackUpHitbox = { 2, 5, 32, 22, -22, 32, 48 };
 AttackData downAttackHitbox = { 2, 8, 30, 14, -36, 40, 32 };
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
-    EnsureGameWorkingDirectory();
     CreateMyWindow();
     CreateDirectInput();
 

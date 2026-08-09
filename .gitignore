@@ -1,55 +1,13 @@
-.vs/persona battle/CopilotIndices/18.7.1253.33689/CodeChunks.db
-.vs/persona battle.slnx/v18/.suo
-.vs/persona battle.slnx/v18/Browse.VC.db
-.vs/persona battle.slnx/v18/DocumentLayout.json
-.vs/persona battle.slnx/v18/DocumentLayout.backup.json
-.vs/persona battle.slnx/v18/ipch/AutoPCH/d2d8ff4f1ef68f3e/UI.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/c6a78c28d971d50/MAIN.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/2c10ce0ad76bf8a3/GAME.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/4a3693bc585a971/SOUND.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/95bf536ca5eab589/MAIN.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/cdc620995aa62f7e/GAME.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/10cbbd6a4d5c0e4c/AUDIO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/7039e0cca3a9d246/INPUT.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/b2960d99ca631cdd/JOKER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/3b712b13de427938/SPRITE.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/5577c70d58f69a50/PLAYER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/7a349f7d5471debb/MAKOTO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/7eead9e28dd27b1b/CONFIG.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/b666568141fef1f4/MAKOTO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/dffe9d366cd89dfd/MAKOTO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/e48ec1f355d31ce9/PLAYER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/f1c219c864945ec1/SPRITE.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/22db9cdf9621a8da/PERSONA.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/254207de3c045697/FIGHTER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/2cf0062c5d7329ca/FIGHTER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/410fab55e85105f/MMSYSCOM.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/4cfb70c9123edebf/PERSONA.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/ae16add4f0120854/AKIHIKO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/be89bfe033fb6780/FIGHTER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/becf10abdec0a42/MAIN (1).ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/c6abf0df668e8515/AKIHIKO.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/b4b214421db418a7/OPPONENT.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/e568228fc06db5bb/RENDERER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/f084567d20e0f9a5/MAIN (2).ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/21737740d4d1f927/COLLISION.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/1f5e1a16a318ff3e/FRAMETIMER.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/cb4d84af0dcd387f/GAME_LOGIC.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/270640d32fe8a9d8/PRACTICAL 7.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/7c705ffd78607519/PRACTICAL 8.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/f0a37c64643a59af/PRACTICAL 7.ipch
-.vs/persona battle.slnx/v18/ipch/AutoPCH/1b4d91b35ac8a8d9/MAKOTO_ASSETS.ipch
-.vs/persona battle.slnx/FileContentIndex/2085f854-b0c8-46d5-a759-46fa04299b4d.vsidx
-.vs/persona battle.slnx/FileContentIndex/3a06170e-960a-4499-802b-448986ab90e8.vsidx
-.vs/persona battle.slnx/FileContentIndex/5738939d-bec6-428b-9063-960322f80462.vsidx
-.vs/persona battle.slnx/FileContentIndex/c391fe48-1704-46aa-8aeb-83ffa0e24340.vsidx
-.vs/persona battle.slnx/FileContentIndex/d368c7a3-379d-4909-ac1a-7aa97a122bdc.vsidx
-.vs/persona battle.slnx/FileContentIndex/edcf7829-45b7-4e9c-ac8a-1dfde927649f.vsidx
-.vs/persona battle/CopilotIndices/18.7.1253.33689/SemanticSymbols.db
-.vs/persona battle.slnx/v18/Browse.VC.db-shm
-.vs/persona battle.slnx/v18/Browse.VC.db-wal
-.vs/persona battle.slnx/v18/Browse.VC.opendb
-.vs/persona battle.slnx/v18/ipch/AutoPCH/8e38f2f191a00187/UI.ipch
-.vs/persona battle.slnx/FileContentIndex/0bd7e69b-2c08-4036-a0ea-13e12eb94e2f.vsidx
-.vs/persona battle.slnx/FileContentIndex/c7ac8079-7ca4-4001-8819-d011d28c9c17.vsidx
-.vs/persona battle.slnx/FileContentIndex/e58bb856-9345-4847-9dee-bf445eca0cb8.vsidx
+.vs/
+Debug/
+Release/
+x64/
+x86/
+*.log
+*.exe
+*.obj
+*.pch
+*.pdb
+*.ipch
+*.vsidx
+*.db
