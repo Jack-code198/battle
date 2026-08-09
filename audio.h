@@ -7,6 +7,8 @@ public:
     ~SoundManager();
 
     bool Initialise();
+    void PlayMenuMusic();
+    void StopMenuMusic();
     void PlayBattleMusic();
     void StopBattleMusic();
     void ToggleMusicMute();
@@ -15,9 +17,14 @@ public:
     void Shutdown();
 
 private:
+    void StopCurrentMusic();
+    void PlayMusicTrack(void* track);
+
     void* fmodSystem;
+    void* menuMusic;
     void* battleMusic;
     void* musicChannel;
+    void* currentTrack;
     bool isInitialised;
     bool isPlaying;
     bool isMuted;

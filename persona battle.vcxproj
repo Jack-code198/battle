@@ -188,9 +188,11 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="menuMain.cpp" />
     <ClCompile Include="player\Fighter.cpp" />
     <ClCompile Include="player\makoto\Makoto.cpp" />
     <ClCompile Include="player\joker\Joker.cpp" />
+    <ClCompile Include="stageSelect.cpp" />
     <ClCompile Include="ui.cpp" />
     <ClCompile Include="audio.cpp" />
     <ClCompile Include="FrameTimer.cpp" />
@@ -200,9 +202,11 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClCompile Include="renderer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="menuMain.h" />
     <ClInclude Include="player\Fighter.h" />
     <ClInclude Include="player\makoto\Makoto.h" />
     <ClInclude Include="player\joker\Joker.h" />
+    <ClInclude Include="stageSelect.h" />
     <ClInclude Include="ui.h" />
     <ClInclude Include="audio.h" />
     <ClInclude Include="collision.h" />

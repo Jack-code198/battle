@@ -11,6 +11,8 @@ LPDIRECTINPUT8 dInput = NULL;
 LPDIRECTINPUTDEVICE8 dInputKeyboardDevice = NULL;
 BYTE diKeys[256];
 bool g_WindowHasFocus = true;
+static HCURSOR g_GameCursor = NULL;
+
 LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_ACTIVATE:
@@ -20,6 +22,12 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         }
         else {
             g_WindowHasFocus = true;
+        }
+        break;
+    case WM_SETCURSOR:
+        if (g_GameCursor && LOWORD(lParam) == HTCLIENT) {
+            SetCursor(g_GameCursor);
+            return TRUE;
         }
         break;
     case WM_DESTROY:
@@ -99,6 +107,40 @@ void GetInput() {
     }
 }
 
+bool LoadGameCursor() {
+    if (g_GameCursor) {
+        return true;
+    }
+
+    const char* cursorCandidates[] = {
+        "assets/cursor/cursor.ani",
+        "assets/cursor/cursor.cur",
+        "assets/cursor/LINK SELECT.ani",
+        "assets/cursor/link_select.ani"
+    };
+
+    for (const char* path : cursorCandidates) {
+        HCURSOR loaded = LoadCursorFromFileA(path);
+        if (loaded) {
+            g_GameCursor = loaded;
+            if (g_hWnd) {
+                SetClassLongPtr(g_hWnd, GCLP_HCURSOR, (LONG_PTR)g_GameCursor);
+                SetCursor(g_GameCursor);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void CleanUpGameCursor() {
+    if (g_GameCursor) {
+        DestroyCursor(g_GameCursor);
+        g_GameCursor = NULL;
+    }
+}
+
 void CreateMyWindow() {
     ZeroMemory(&msg, sizeof(msg));
     ZeroMemory(&wndClass, sizeof(wndClass));
@@ -107,10 +149,13 @@ void CreateMyWindow() {
     wndClass.lpfnWndProc = WindowProcedure;
     wndClass.lpszClassName = "StandardD3DWindowClass";
     wndClass.style = CS_HREDRAW | CS_VREDRAW;
+    wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClass(&wndClass);
 
     g_hWnd = CreateWindowEx(0, wndClass.lpszClassName, "Persona Framework", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, GetModuleHandle(NULL), NULL);
+
+    LoadGameCursor();
 
     ShowWindow(g_hWnd, SW_SHOWNORMAL);
     UpdateWindow(g_hWnd);
@@ -126,5 +171,23 @@ bool WindowIsRunning() {
 }
 
 void CleanUpWindow() {
+    CleanUpGameCursor();
     UnregisterClass(wndClass.lpszClassName, GetModuleHandle(NULL));
+}
+
+bool GetGameCursorPos(POINT& outPt) {
+    if (!GetCursorPos(&outPt)) return false;
+    if (!ScreenToClient(g_hWnd, &outPt)) return false;
+
+    RECT clientRect = {};
+    if (!GetClientRect(g_hWnd, &clientRect)) return false;
+
+    const int clientW = clientRect.right - clientRect.left;
+    const int clientH = clientRect.bottom - clientRect.top;
+    if (clientW <= 0 || clientH <= 0) return false;
+
+    // Present stretches the backbuffer to the client; map mouse into game coords.
+    outPt.x = (LONG)((outPt.x * (LONGLONG)SCREEN_WIDTH) / clientW);
+    outPt.y = (LONG)((outPt.y * (LONGLONG)SCREEN_HEIGHT) / clientH);
+    return true;
 }
