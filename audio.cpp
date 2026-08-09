@@ -5,8 +5,8 @@
 SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
-    : fmodSystem(nullptr), battleMusic(nullptr), musicChannel(nullptr),
-      isInitialised(false), isPlaying(false), isMuted(false) {
+    : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), musicChannel(nullptr),
+      currentTrack(nullptr), isInitialised(false), isPlaying(false), isMuted(false) {
 }
 
 SoundManager::~SoundManager() {
@@ -30,40 +30,93 @@ bool SoundManager::Initialise() {
         return false;
     }
 
-    FMOD::Sound* track = nullptr;
+    FMOD::Sound* menuTrack = nullptr;
+    result = system->createSound(
+        "assets/sound/mainmenu_music.mp3",
+        FMOD_LOOP_NORMAL | FMOD_DEFAULT,
+        nullptr,
+        &menuTrack);
+    if (result != FMOD_OK) {
+        menuTrack = nullptr;
+    }
+
+    FMOD::Sound* battleTrack = nullptr;
     result = system->createSound(
         "assets/sound/battle_music.mp3",
         FMOD_LOOP_NORMAL | FMOD_DEFAULT,
         nullptr,
-        &track);
-
+        &battleTrack);
     if (result != FMOD_OK) {
+        battleTrack = nullptr;
+    }
+
+    if (!menuTrack && !battleTrack) {
         system->close();
         system->release();
         return false;
     }
 
     fmodSystem = system;
-    battleMusic = track;
+    menuMusic = menuTrack;
+    battleMusic = battleTrack;
     isInitialised = true;
     return true;
 }
 
-void SoundManager::PlayBattleMusic() {
-    if (!isInitialised || isPlaying) {
+void SoundManager::StopCurrentMusic() {
+    if (!isPlaying || musicChannel == nullptr) {
         return;
     }
 
+    FMOD::Channel* channel = static_cast<FMOD::Channel*>(musicChannel);
+    channel->stop();
+    musicChannel = nullptr;
+    currentTrack = nullptr;
+    isPlaying = false;
+}
+
+void SoundManager::PlayMusicTrack(void* track) {
+    if (!isInitialised || track == nullptr) {
+        return;
+    }
+
+    if (isPlaying && currentTrack == track) {
+        return;
+    }
+
+    StopCurrentMusic();
+
     FMOD::System* system = static_cast<FMOD::System*>(fmodSystem);
-    FMOD::Sound* track = static_cast<FMOD::Sound*>(battleMusic);
+    FMOD::Sound* sound = static_cast<FMOD::Sound*>(track);
     FMOD::Channel* channel = nullptr;
 
-    if (system->playSound(track, nullptr, false, &channel) == FMOD_OK) {
+    if (system->playSound(sound, nullptr, false, &channel) == FMOD_OK) {
         musicChannel = channel;
+        currentTrack = track;
         isPlaying = true;
         if (isMuted) {
             channel->setMute(true);
         }
+    }
+}
+
+void SoundManager::PlayMenuMusic() {
+    PlayMusicTrack(menuMusic);
+}
+
+void SoundManager::StopMenuMusic() {
+    if (currentTrack == menuMusic) {
+        StopCurrentMusic();
+    }
+}
+
+void SoundManager::PlayBattleMusic() {
+    PlayMusicTrack(battleMusic);
+}
+
+void SoundManager::StopBattleMusic() {
+    if (currentTrack == battleMusic) {
+        StopCurrentMusic();
     }
 }
 
@@ -73,17 +126,6 @@ void SoundManager::ToggleMusicMute() {
         FMOD::Channel* channel = static_cast<FMOD::Channel*>(musicChannel);
         channel->setMute(isMuted);
     }
-}
-
-void SoundManager::StopBattleMusic() {
-    if (!isPlaying || musicChannel == nullptr) {
-        return;
-    }
-
-    FMOD::Channel* channel = static_cast<FMOD::Channel*>(musicChannel);
-    channel->stop();
-    musicChannel = nullptr;
-    isPlaying = false;
 }
 
 void SoundManager::Update() {
@@ -96,7 +138,12 @@ void SoundManager::Update() {
 }
 
 void SoundManager::Shutdown() {
-    StopBattleMusic();
+    StopCurrentMusic();
+
+    if (menuMusic != nullptr) {
+        static_cast<FMOD::Sound*>(menuMusic)->release();
+        menuMusic = nullptr;
+    }
 
     if (battleMusic != nullptr) {
         static_cast<FMOD::Sound*>(battleMusic)->release();
