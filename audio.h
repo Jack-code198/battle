@@ -11,6 +11,7 @@ public:
     void StopMenuMusic();
     void PlayBattleMusic();
     void StopBattleMusic();
+    void PlaySelectionSound();
     void ToggleMusicMute();
     bool IsMusicMuted() const { return isMuted; }
     void Update();
@@ -23,6 +24,7 @@ private:
     void* fmodSystem;
     void* menuMusic;
     void* battleMusic;
+    void* selectionSound;
     void* musicChannel;
     void* currentTrack;
     bool isInitialised;

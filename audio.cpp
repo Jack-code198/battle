@@ -5,8 +5,8 @@
 SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
-    : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), musicChannel(nullptr),
-      currentTrack(nullptr), isInitialised(false), isPlaying(false), isMuted(false) {
+    : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), selectionSound(nullptr),
+      musicChannel(nullptr), currentTrack(nullptr), isInitialised(false), isPlaying(false), isMuted(false) {
 }
 
 SoundManager::~SoundManager() {
@@ -50,7 +50,20 @@ bool SoundManager::Initialise() {
         battleTrack = nullptr;
     }
 
+    FMOD::Sound* selectSfx = nullptr;
+    result = system->createSound(
+        "assets/sound/selection_sound.mp3",
+        FMOD_DEFAULT,
+        nullptr,
+        &selectSfx);
+    if (result != FMOD_OK) {
+        selectSfx = nullptr;
+    }
+
     if (!menuTrack && !battleTrack) {
+        if (selectSfx) {
+            selectSfx->release();
+        }
         system->close();
         system->release();
         return false;
@@ -59,6 +72,7 @@ bool SoundManager::Initialise() {
     fmodSystem = system;
     menuMusic = menuTrack;
     battleMusic = battleTrack;
+    selectionSound = selectSfx;
     isInitialised = true;
     return true;
 }
@@ -120,6 +134,22 @@ void SoundManager::StopBattleMusic() {
     }
 }
 
+void SoundManager::PlaySelectionSound() {
+    if (!isInitialised || selectionSound == nullptr) {
+        return;
+    }
+
+    FMOD::System* system = static_cast<FMOD::System*>(fmodSystem);
+    FMOD::Sound* sound = static_cast<FMOD::Sound*>(selectionSound);
+    FMOD::Channel* channel = nullptr;
+
+    if (system->playSound(sound, nullptr, false, &channel) == FMOD_OK && channel != nullptr) {
+        if (isMuted) {
+            channel->setMute(true);
+        }
+    }
+}
+
 void SoundManager::ToggleMusicMute() {
     isMuted = !isMuted;
     if (musicChannel != nullptr) {
@@ -148,6 +178,11 @@ void SoundManager::Shutdown() {
     if (battleMusic != nullptr) {
         static_cast<FMOD::Sound*>(battleMusic)->release();
         battleMusic = nullptr;
+    }
+
+    if (selectionSound != nullptr) {
+        static_cast<FMOD::Sound*>(selectionSound)->release();
+        selectionSound = nullptr;
     }
 
     if (fmodSystem != nullptr) {

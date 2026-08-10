@@ -135,9 +135,18 @@ inline constexpr float HUD_HP_BAR_HEIGHT = 16.0f;
 inline constexpr float HUD_SP_BAR_HEIGHT = 10.0f;
 inline constexpr float HUD_BAR_GAP = 5.0f;
 inline constexpr float HUD_NAME_OFFSET_Y = -22.0f;
-inline constexpr const char* HUD_FONT_FILE = "assets/font/BMSPA___.TTF";
-inline constexpr const char* HUD_FONT_FILE_ALT = "assets/font/font.TTF";
-inline constexpr const char* HUD_FONT_FAMILY = "BM space";
+// Font assets (AddFontResourceEx path + D3DXCreateFont family name)
+inline constexpr const char* NORMAL_FONT_FILE = "assets/font/normal_font.TTF";
+inline constexpr const char* NORMAL_FONT_FAMILY = "BM space";
+inline constexpr const char* MAINMENU_FONT_FILE = "assets/font/mainmenu_font.ttf";
+inline constexpr const char* MAINMENU_FONT_FAMILY = "Persona 5 Menu Font Prototype";
+inline constexpr const char* GAMETITLE_FONT_FILE = "assets/font/gametitle_font.ttf";
+inline constexpr const char* GAMETITLE_FONT_FAMILY = "Markin LT UltraBold";
+
+// HUD / player name uses normal_font
+inline constexpr const char* HUD_FONT_FILE = NORMAL_FONT_FILE;
+inline constexpr const char* HUD_FONT_FILE_ALT = NORMAL_FONT_FILE;
+inline constexpr const char* HUD_FONT_FAMILY = NORMAL_FONT_FAMILY;
 inline constexpr int MAKOTO_CELL_SIZE = 256;
 inline constexpr int GAME_ANIMATION_FPS = 60;
 inline constexpr int MAKOTO_LOOP_TICKS_SLOW = 4;

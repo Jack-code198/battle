@@ -27,12 +27,8 @@ static bool LoadHudFont() {
         return g_HudFont != nullptr;
     }
 
-    const char* fontCandidates[] = { HUD_FONT_FILE, HUD_FONT_FILE_ALT };
-    for (const char* path : fontCandidates) {
-        if (AddFontResourceExA(path, FR_PRIVATE, 0) != 0) {
-            g_LoadedHudFontPath = path;
-            break;
-        }
+    if (AddFontResourceExA(NORMAL_FONT_FILE, FR_PRIVATE, 0) != 0) {
+        g_LoadedHudFontPath = NORMAL_FONT_FILE;
     }
 
     g_HudFontLoaded = true;
@@ -53,7 +49,7 @@ static bool LoadHudFont() {
             &g_HudFont);
     };
 
-    HRESULT hr = tryCreateFont(HUD_FONT_FAMILY);
+    HRESULT hr = tryCreateFont(NORMAL_FONT_FAMILY);
     if (FAILED(hr) || !g_HudFont) {
         if (g_HudFont) {
             g_HudFont->Release();
