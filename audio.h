@@ -1,6 +1,8 @@
 #pragma once
 
-// Sound module (BMCS2224) - FMOD wrapper
+// Sound module (BMCS2224) - FMOD wrapper.
+// Owns the FMOD system, loops menu/battle music, and plays one-shot UI SFX.
+
 class SoundManager {
 public:
     SoundManager();

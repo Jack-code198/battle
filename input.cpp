@@ -12,6 +12,38 @@ LPDIRECTINPUTDEVICE8 dInputKeyboardDevice = NULL;
 BYTE diKeys[256];
 bool g_WindowHasFocus = true;
 static HCURSOR g_GameCursor = NULL;
+static bool g_MenuCursorEnabled = true;
+
+static void ApplyMenuCursorState() {
+    if (!g_hWnd) return;
+
+    if (g_MenuCursorEnabled) {
+        if (g_GameCursor) {
+            SetClassLongPtr(g_hWnd, GCLP_HCURSOR, (LONG_PTR)g_GameCursor);
+            SetCursor(g_GameCursor);
+        }
+        while (ShowCursor(TRUE) < 0) {
+        }
+    }
+    else {
+        SetClassLongPtr(g_hWnd, GCLP_HCURSOR, NULL);
+        SetCursor(NULL);
+        while (ShowCursor(FALSE) >= 0) {
+        }
+    }
+}
+
+void SetMenuCursorEnabled(bool enabled) {
+    if (g_MenuCursorEnabled == enabled) {
+        return;
+    }
+    g_MenuCursorEnabled = enabled;
+    ApplyMenuCursorState();
+}
+
+bool IsMenuCursorEnabled() {
+    return g_MenuCursorEnabled;
+}
 
 LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
@@ -22,12 +54,20 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         }
         else {
             g_WindowHasFocus = true;
+            // Re-apply cursor policy when regaining focus.
+            ApplyMenuCursorState();
         }
         break;
     case WM_SETCURSOR:
-        if (g_GameCursor && LOWORD(lParam) == HTCLIENT) {
-            SetCursor(g_GameCursor);
-            return TRUE;
+        if (LOWORD(lParam) == HTCLIENT) {
+            if (g_MenuCursorEnabled && g_GameCursor) {
+                SetCursor(g_GameCursor);
+                return TRUE;
+            }
+            if (!g_MenuCursorEnabled) {
+                SetCursor(NULL);
+                return TRUE;
+            }
         }
         break;
     case WM_DESTROY:
@@ -156,6 +196,7 @@ void CreateMyWindow() {
         CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, GetModuleHandle(NULL), NULL);
 
     LoadGameCursor();
+    SetMenuCursorEnabled(true);
 
     ShowWindow(g_hWnd, SW_SHOWNORMAL);
     UpdateWindow(g_hWnd);

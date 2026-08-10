@@ -2,6 +2,9 @@
 #include "../Fighter.h"
 #include "JokerAssets.h"
 
+// Player 2 / training sandbag fighter (OO subclass of Fighter).
+// Handles hit reactions, return-to-spawn, and Joker sprite rendering.
+
 struct JokerTextureSet;
 
 enum JokerState {
@@ -25,7 +28,7 @@ private:
     int stunTimer;
     bool isDamageAnimating;
     bool isForceResetting;
-    bool bForceReset;
+    bool forceResetRequested;
     bool shouldReturnToOriginal;
     bool isActive;
     int trainingIdleFrames;

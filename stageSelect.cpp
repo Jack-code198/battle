@@ -42,6 +42,27 @@ static int g_LastStageUiFocus = StageUi_None;
 static const D3DCOLOR STAGE_COLOR_NORMAL = D3DCOLOR_XRGB(255, 255, 255);
 static const D3DCOLOR STAGE_COLOR_SELECTED = D3DCOLOR_XRGB(255, 230, 80);
 
+// Stage select layout (named constants instead of hardcoded RECT literals).
+static const float STAGE_PREVIEW_WIDTH = 640.0f;
+static const float STAGE_PREVIEW_HEIGHT = 360.0f;
+static const float STAGE_PREVIEW_TOP = 160.0f;
+static const float STAGE_ARROW_HIT_WIDTH = 100.0f;
+static const float STAGE_ARROW_HIT_HALF_HEIGHT = 48.0f;
+static const float STAGE_ARROW_GAP = 10.0f;
+static const float STAGE_CONFIRM_HALF_WIDTH = 220.0f;
+static const LONG STAGE_TITLE_TOP = 40;
+static const LONG STAGE_TITLE_BOTTOM = 100;
+static const LONG STAGE_NAME_TOP = 540;
+static const LONG STAGE_NAME_BOTTOM = 590;
+static const LONG STAGE_COUNTER_TOP = 580;
+static const LONG STAGE_COUNTER_BOTTOM = 620;
+static const LONG STAGE_CONFIRM_TOP = 600;
+static const LONG STAGE_CONFIRM_BOTTOM = 690;
+static const LONG STAGE_HINT_TOP = 700;
+static const LONG STAGE_HINT_BOTTOM = 740;
+static const LONG STAGE_HINT_SIDE_MARGIN = 40;
+static const float STAGE_FRAME_THICKNESS = 3.0f;
+
 static bool CreateStageUiFont(const char* familyName, INT height, ID3DXFont** outFont) {
     HRESULT hr = D3DXCreateFontA(
         g_pD3DDevice,
@@ -150,19 +171,42 @@ void ApplySelectedStageToBattle() {
     }
 }
 
-static void UpdateStageUiHitboxes() {
-    const float previewW = 640.0f;
-    const float previewH = 360.0f;
-    const float offsetX = ((float)SCREEN_WIDTH - previewW) * 0.5f;
-    const float offsetY = 160.0f;
+static void GetStagePreviewLayout(float& previewW, float& previewH, float& offsetX, float& offsetY) {
+    previewW = STAGE_PREVIEW_WIDTH;
+    previewH = STAGE_PREVIEW_HEIGHT;
+    offsetX = ((float)SCREEN_WIDTH - previewW) * 0.5f;
+    offsetY = STAGE_PREVIEW_TOP;
+}
 
-    g_StageLeftHit = { (LONG)(offsetX - 110.0f), (LONG)(offsetY + previewH * 0.5f - 48.0f),
-                       (LONG)(offsetX - 10.0f), (LONG)(offsetY + previewH * 0.5f + 48.0f) };
-    g_StageRightHit = { (LONG)(offsetX + previewW + 10.0f), (LONG)(offsetY + previewH * 0.5f - 48.0f),
-                        (LONG)(offsetX + previewW + 110.0f), (LONG)(offsetY + previewH * 0.5f + 48.0f) };
+static void UpdateStageUiHitboxes() {
+    float previewW = 0.0f;
+    float previewH = 0.0f;
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+    GetStagePreviewLayout(previewW, previewH, offsetX, offsetY);
+
+    const float arrowCenterY = offsetY + previewH * 0.5f;
+    g_StageLeftHit = {
+        (LONG)(offsetX - STAGE_ARROW_GAP - STAGE_ARROW_HIT_WIDTH),
+        (LONG)(arrowCenterY - STAGE_ARROW_HIT_HALF_HEIGHT),
+        (LONG)(offsetX - STAGE_ARROW_GAP),
+        (LONG)(arrowCenterY + STAGE_ARROW_HIT_HALF_HEIGHT)
+    };
+    g_StageRightHit = {
+        (LONG)(offsetX + previewW + STAGE_ARROW_GAP),
+        (LONG)(arrowCenterY - STAGE_ARROW_HIT_HALF_HEIGHT),
+        (LONG)(offsetX + previewW + STAGE_ARROW_GAP + STAGE_ARROW_HIT_WIDTH),
+        (LONG)(arrowCenterY + STAGE_ARROW_HIT_HALF_HEIGHT)
+    };
+
     // Wide / tall hitbox so Confirm is easy to click (text stays centered inside).
-    g_StageConfirmHit = { (LONG)(offsetX + previewW * 0.5f - 220.0f), 600,
-                          (LONG)(offsetX + previewW * 0.5f + 220.0f), 690 };
+    const float previewCenterX = offsetX + previewW * 0.5f;
+    g_StageConfirmHit = {
+        (LONG)(previewCenterX - STAGE_CONFIRM_HALF_WIDTH),
+        STAGE_CONFIRM_TOP,
+        (LONG)(previewCenterX + STAGE_CONFIRM_HALF_WIDTH),
+        STAGE_CONFIRM_BOTTOM
+    };
 }
 
 static void DrawStagePreview() {
@@ -170,13 +214,14 @@ static void DrawStagePreview() {
 
     const StageInfo& stage = g_Stages[g_SelectedStageIndex];
 
-    const float previewW = 640.0f;
-    const float previewH = 360.0f;
-    const float offsetX = ((float)SCREEN_WIDTH - previewW) * 0.5f;
-    const float offsetY = 160.0f;
+    float previewW = 0.0f;
+    float previewH = 0.0f;
+    float offsetX = 0.0f;
+    float offsetY = 0.0f;
+    GetStagePreviewLayout(previewW, previewH, offsetX, offsetY);
 
     if (g_StageTitleFont) {
-        RECT titleRect = { 0, 40, SCREEN_WIDTH, 100 };
+        RECT titleRect = { 0, STAGE_TITLE_TOP, SCREEN_WIDTH, STAGE_TITLE_BOTTOM };
         g_StageTitleFont->DrawTextA(
             spriteBrush,
             "STAGE SELECT",
@@ -209,10 +254,11 @@ static void DrawStagePreview() {
         DrawDebugRect(spriteBrush, offsetX, offsetY, previewW, previewH, D3DCOLOR_ARGB(255, 40, 40, 40));
     }
 
-    DrawDebugRect(spriteBrush, offsetX - 3.0f, offsetY - 3.0f, previewW + 6.0f, 3.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
-    DrawDebugRect(spriteBrush, offsetX - 3.0f, offsetY + previewH, previewW + 6.0f, 3.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
-    DrawDebugRect(spriteBrush, offsetX - 3.0f, offsetY - 3.0f, 3.0f, previewH + 6.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
-    DrawDebugRect(spriteBrush, offsetX + previewW, offsetY - 3.0f, 3.0f, previewH + 6.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
+    const float frame = STAGE_FRAME_THICKNESS;
+    DrawDebugRect(spriteBrush, offsetX - frame, offsetY - frame, previewW + frame * 2.0f, frame, D3DCOLOR_ARGB(220, 255, 255, 255));
+    DrawDebugRect(spriteBrush, offsetX - frame, offsetY + previewH, previewW + frame * 2.0f, frame, D3DCOLOR_ARGB(220, 255, 255, 255));
+    DrawDebugRect(spriteBrush, offsetX - frame, offsetY - frame, frame, previewH + frame * 2.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
+    DrawDebugRect(spriteBrush, offsetX + previewW, offsetY - frame, frame, previewH + frame * 2.0f, D3DCOLOR_ARGB(220, 255, 255, 255));
 
     UpdateStageUiHitboxes();
 
@@ -224,12 +270,12 @@ static void DrawStagePreview() {
         g_StageFont->DrawTextA(spriteBrush, "<", -1, &g_StageLeftHit, DT_CENTER | DT_VCENTER | DT_SINGLELINE, leftColor);
         g_StageFont->DrawTextA(spriteBrush, ">", -1, &g_StageRightHit, DT_CENTER | DT_VCENTER | DT_SINGLELINE, rightColor);
 
-        RECT nameRect = { 0, 540, SCREEN_WIDTH, 590 };
+        RECT nameRect = { 0, STAGE_NAME_TOP, SCREEN_WIDTH, STAGE_NAME_BOTTOM };
         g_StageFont->DrawTextA(spriteBrush, stage.name, -1, &nameRect, DT_CENTER | DT_TOP, STAGE_COLOR_NORMAL);
 
         char counterText[32];
         sprintf_s(counterText, "%d / %d", g_SelectedStageIndex + 1, STAGE_COUNT);
-        RECT counterRect = { 0, 580, SCREEN_WIDTH, 620 };
+        RECT counterRect = { 0, STAGE_COUNTER_TOP, SCREEN_WIDTH, STAGE_COUNTER_BOTTOM };
         g_StageFont->DrawTextA(spriteBrush, counterText, -1, &counterRect, DT_CENTER | DT_TOP, D3DCOLOR_XRGB(220, 220, 220));
 
         g_StageFont->DrawTextA(
@@ -241,7 +287,12 @@ static void DrawStagePreview() {
             confirmColor);
 
         if (g_StageHintFont) {
-            RECT hintRect = { 40, 700, SCREEN_WIDTH - 40, 740 };
+            RECT hintRect = {
+                STAGE_HINT_SIDE_MARGIN,
+                STAGE_HINT_TOP,
+                SCREEN_WIDTH - STAGE_HINT_SIDE_MARGIN,
+                STAGE_HINT_BOTTOM
+            };
             g_StageHintFont->DrawTextA(
                 spriteBrush,
                 "Arrows / Mouse: change stage    Enter: Confirm    Esc: back",

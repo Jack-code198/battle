@@ -4,6 +4,8 @@
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 
+// Shared battle objects: frame timer and the two fighters.
+
 extern FrameTimer g_GameTimer;
 extern Makoto g_Player1;
 extern Joker g_Player2;

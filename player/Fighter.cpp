@@ -9,7 +9,7 @@ Fighter::Fighter()
     , isHit(false)
     , hitStunTimer(0)
     , isDead(false)
-    , velocity(4) {
+    , velocity(JOKER_MOVE_SPEED) {
     position = D3DXVECTOR3(0, 0, 0);
     hurtbox = { 0, 0, 0, 0 };
 }
@@ -22,9 +22,10 @@ void Fighter::UpdateHurtbox(float offsetX, float offsetY, float width, float hei
 }
 
 void Fighter::UpdateScaledHurtbox() {
-    float s = GetCharacterRenderScale();
-    hurtbox.width = 36.0f * s;
-    hurtbox.height = 110.0f * s;
+    // Convert unscaled body-unit hurtbox into screen space around fighter feet/center.
+    float renderScale = GetCharacterRenderScale();
+    hurtbox.width = DEFAULT_HURTBOX_WIDTH * renderScale;
+    hurtbox.height = DEFAULT_HURTBOX_HEIGHT * renderScale;
     hurtbox.x = position.x - hurtbox.width * 0.5f;
     hurtbox.y = position.y - hurtbox.height;
 }

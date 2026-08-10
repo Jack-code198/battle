@@ -20,7 +20,7 @@ extern bool g_WindowHasFocus;
 extern const int SCREEN_WIDTH;
 extern const int SCREEN_HEIGHT;
 
-// 角色渲染 / 物理
+// Character render scale / physics
 inline constexpr float CHARACTER_SCREEN_HEIGHT_RATIO = 0.22f;
 inline constexpr float MAKOTO_SCREEN_HEIGHT_RATIO = 0.24f;
 inline constexpr float CHARACTER_REFERENCE_HEIGHT = 64.0f;
@@ -67,6 +67,30 @@ inline constexpr float JOKER_HURTBOX_WIDTH = 26.0f;
 inline constexpr float JOKER_HURTBOX_HEIGHT = 56.0f;
 inline constexpr float JOKER_PUSHBOX_WIDTH = 20.0f;
 inline constexpr float JOKER_PUSHBOX_HEIGHT = 52.0f;
+
+// Default fighter hurtbox in unscaled body units (scaled by GetCharacterRenderScale()).
+// Sized from Makoto's visible body silhouette in the 256px cell sheet.
+inline constexpr float DEFAULT_HURTBOX_WIDTH = 36.0f;
+inline constexpr float DEFAULT_HURTBOX_HEIGHT = 110.0f;
+
+// Movement speeds (pixels per logic step before facing direction).
+inline constexpr int MAKOTO_MOVE_SPEED = 6;
+inline constexpr int JOKER_MOVE_SPEED = 4;
+inline constexpr float MAKOTO_DASH_SPEED_MULTIPLIER = 3.5f;
+
+// Joker vertical clamp (keeps sandbag opponent near the battle ground band).
+inline constexpr float JOKER_MAX_GROUND_SLACK = 20.0f;
+inline constexpr float JOKER_MIN_SCREEN_Y = 200.0f;
+
+// Dash attack active frames / box (unscaled units; multiplied by Makoto draw scale).
+// Box is anchored ahead of Makoto's center toward facing direction.
+inline constexpr int DASH_HIT_START_FRAME = 1;
+inline constexpr int DASH_HIT_END_FRAME = 6;
+inline constexpr float DASH_HITBOX_WIDTH = 36.0f;
+inline constexpr float DASH_HITBOX_HEIGHT = 40.0f;
+inline constexpr float DASH_HITBOX_FORWARD = 10.0f;
+inline constexpr float DASH_HITBOX_UP = 50.0f;
+inline constexpr int DASH_HIT_DAMAGE = 28;
 
 inline constexpr bool JOKER_SANDBAG_MODE = true;
 inline constexpr bool OPPONENT_SANDBAG_MODE = JOKER_SANDBAG_MODE;
@@ -436,6 +460,9 @@ extern LPDIRECTINPUT8 dInput;
 extern LPDIRECTINPUTDEVICE8 dInputKeyboardDevice;
 extern BYTE diKeys[256];
 
+// Melee attack description.
+// Frames are animation indices where the hitbox is active.
+// offset/size are unscaled body units relative to fighter pose (scaled at runtime).
 struct AttackData {
     int startFrame;
     int endFrame;
@@ -446,13 +473,49 @@ struct AttackData {
     float height;
 };
 
+// Neutral / crouch / neutral-air attack (jab).
+inline constexpr int ATK_NEUTRAL_START = 3;
+inline constexpr int ATK_NEUTRAL_END = 10;
+inline constexpr int ATK_NEUTRAL_DAMAGE = 28;
+inline constexpr float ATK_NEUTRAL_OFFSET_X = 18.0f;
+inline constexpr float ATK_NEUTRAL_OFFSET_Y = -18.0f;
+inline constexpr float ATK_NEUTRAL_WIDTH = 28.0f;
+inline constexpr float ATK_NEUTRAL_HEIGHT = 40.0f;
+
+// Side attack / side-air.
+inline constexpr int ATK_SIDE_START = 2;
+inline constexpr int ATK_SIDE_END = 8;
+inline constexpr int ATK_SIDE_DAMAGE = 32;
+inline constexpr float ATK_SIDE_OFFSET_X = 28.0f;
+inline constexpr float ATK_SIDE_OFFSET_Y = -22.0f;
+inline constexpr float ATK_SIDE_WIDTH = 36.0f;
+inline constexpr float ATK_SIDE_HEIGHT = 42.0f;
+
+// Up attack / up-air.
+inline constexpr int ATK_UP_START = 2;
+inline constexpr int ATK_UP_END = 5;
+inline constexpr int ATK_UP_DAMAGE = 32;
+inline constexpr float ATK_UP_OFFSET_X = 22.0f;
+inline constexpr float ATK_UP_OFFSET_Y = -22.0f;
+inline constexpr float ATK_UP_WIDTH = 32.0f;
+inline constexpr float ATK_UP_HEIGHT = 48.0f;
+
+// Down attack / down-air.
+inline constexpr int ATK_DOWN_START = 2;
+inline constexpr int ATK_DOWN_END = 8;
+inline constexpr int ATK_DOWN_DAMAGE = 30;
+inline constexpr float ATK_DOWN_OFFSET_X = 14.0f;
+inline constexpr float ATK_DOWN_OFFSET_Y = -36.0f;
+inline constexpr float ATK_DOWN_WIDTH = 40.0f;
+inline constexpr float ATK_DOWN_HEIGHT = 32.0f;
+
 void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DCOLOR color);
 
-// ============ 外部攻击数据结构 ============
+// Shared melee AttackData instances (defined in main.cpp).
 extern AttackData attackHitbox;
 extern AttackData sideAttackHitbox;
 extern AttackData attackUpHitbox;
 extern AttackData downAttackHitbox;
 
-// ============ 背景纹理声明 ============
+// Battle background texture (aliased from the selected stage).
 extern LPDIRECT3DTEXTURE9 texBgCity1;

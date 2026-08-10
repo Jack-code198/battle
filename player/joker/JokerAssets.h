@@ -1,7 +1,7 @@
 #pragma once
 
-// Joker + Arsene 动作模组索引（256x256 spritesheet）
-// paired=true 表示对战待机/移动时 Joker 与 Arsene 同步播放
+// Joker + Arsene animation catalog indices (256x256 sprite sheets).
+// pairedWithArsene=true means Joker and Arsene play in sync for stance/move.
 enum JokerAnimId {
     JOKER_ANIM_STANCE,
     JOKER_ANIM_WALK,
@@ -48,7 +48,7 @@ struct JokerAnimInfo {
     bool pairedWithArsene;
 };
 
-// 资源清单：供 Joker 加载与未来 AI/输入扩展使用
+// Asset table used by Joker loading (and future AI / input expansion).
 inline constexpr JokerAnimInfo kJokerAnimCatalog[JOKER_ANIM_COUNT] = {
     { "stance.png", "arsene_stance.png", nullptr, nullptr, 4, true },
     { "walk.png", "arsene_run.png", nullptr, nullptr, 8, true },

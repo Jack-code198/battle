@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+// Base fighter for the OO game framework (BMCS2224).
+// Makoto / Joker inherit this and override Update / Render / combat hooks.
 class Fighter {
 public:
     D3DXVECTOR3 position;
@@ -34,5 +36,6 @@ public:
 
     AABB GetHurtbox() const { return hurtbox; }
     void UpdateHurtbox(float offsetX, float offsetY, float width, float height);
+    // Rebuild hurtbox from DEFAULT_HURTBOX_* constants and current position.
     void UpdateScaledHurtbox();
 };
