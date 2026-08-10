@@ -20,6 +20,7 @@ void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DC
     D3DXMATRIX identity;
     D3DXMatrixIdentity(&identity);
     sprite->SetTransform(&identity);
+    sprite->Flush();
 
     struct Vertex { FLOAT x, y, z, rhw; DWORD color; };
     Vertex vertices[4] = {
@@ -29,14 +30,18 @@ void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DC
         { x + w, y + h, 0.0f, 1.0f, color }
     };
 
-    LPDIRECT3DDEVICE9 device;
+    LPDIRECT3DDEVICE9 device = nullptr;
     sprite->GetDevice(&device);
+    if (!device) return;
+
+    device->SetTexture(0, NULL);
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
     device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
     device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(Vertex));
     device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    device->Release();
 }
 
 bool InitD3D() {

@@ -1,12 +1,14 @@
 #include "menuMain.h"
 #include "input.h"
+#include "audio.h"
 
 static LPDIRECT3DTEXTURE9 menuBackground = NULL;
 static ID3DXFont* menuFont = nullptr;
 static ID3DXFont* titleFont = nullptr;
-static const char* g_LoadedMenuFontPath = nullptr;
+static bool g_MenuFontsRegistered = false;
 
 static int currentSelection = 0;
+static int g_LastHoveredOption = -1;
 
 static bool g_MenuUpHeld = false;
 static bool g_MenuDownHeld = false;
@@ -31,69 +33,55 @@ static const int MENU_TITLE_TOP = 40;
 static const int MENU_TITLE_LINE_HEIGHT = 56;
 static const int MENU_TOP_MARGIN = MENU_TITLE_TOP + (MENU_TITLE_LINE_HEIGHT * 2) + 20;
 
+static HRESULT CreateUiFont(const char* familyName, INT height, BOOL italic, ID3DXFont** outFont) {
+    return D3DXCreateFontA(
+        g_pD3DDevice,
+        height,
+        0,
+        FW_BOLD,
+        1,
+        italic,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        familyName,
+        outFont);
+}
+
+static bool LoadOrCreateUiFont(const char* familyName, INT height, BOOL italic, ID3DXFont** outFont) {
+    if (*outFont) return true;
+
+    HRESULT hr = CreateUiFont(familyName, height, italic, outFont);
+    if (FAILED(hr) || !*outFont) {
+        if (*outFont) {
+            (*outFont)->Release();
+            *outFont = nullptr;
+        }
+        hr = CreateUiFont("Arial", height, italic, outFont);
+        if (FAILED(hr) || !*outFont) {
+            *outFont = nullptr;
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool LoadMenuFont() {
     if (menuFont && titleFont) {
         return true;
     }
 
-    if (!g_LoadedMenuFontPath) {
-        const char* fontCandidates[] = { HUD_FONT_FILE, HUD_FONT_FILE_ALT };
-        for (const char* path : fontCandidates) {
-            if (AddFontResourceExA(path, FR_PRIVATE, 0) != 0) {
-                g_LoadedMenuFontPath = path;
-                break;
-            }
-        }
+    if (!g_MenuFontsRegistered) {
+        AddFontResourceExA(GAMETITLE_FONT_FILE, FR_PRIVATE, 0);
+        AddFontResourceExA(MAINMENU_FONT_FILE, FR_PRIVATE, 0);
+        g_MenuFontsRegistered = true;
     }
-
-    auto tryCreateFont = [](const char* familyName, INT height, ID3DXFont** outFont) -> HRESULT {
-        return D3DXCreateFontA(
-            g_pD3DDevice,
-            height,
-            0,
-            FW_BOLD,
-            1,
-            FALSE,
-            DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY,
-            DEFAULT_PITCH | FF_DONTCARE,
-            familyName,
-            outFont);
-    };
 
     bool ok = true;
-
-    if (!titleFont) {
-        HRESULT hr = tryCreateFont(HUD_FONT_FAMILY, 52, &titleFont);
-        if (FAILED(hr) || !titleFont) {
-            if (titleFont) {
-                titleFont->Release();
-                titleFont = nullptr;
-            }
-            hr = tryCreateFont("Arial", 52, &titleFont);
-            if (FAILED(hr) || !titleFont) {
-                titleFont = nullptr;
-                ok = false;
-            }
-        }
-    }
-
-    if (!menuFont) {
-        HRESULT hr = tryCreateFont(HUD_FONT_FAMILY, 34, &menuFont);
-        if (FAILED(hr) || !menuFont) {
-            if (menuFont) {
-                menuFont->Release();
-                menuFont = nullptr;
-            }
-            hr = tryCreateFont("Arial", 34, &menuFont);
-            if (FAILED(hr) || !menuFont) {
-                menuFont = nullptr;
-                ok = false;
-            }
-        }
-    }
-
+    // Title stays upright/aligned; italic only leans letters to the right.
+    if (!LoadOrCreateUiFont(GAMETITLE_FONT_FAMILY, 56, TRUE, &titleFont)) ok = false;
+    if (!LoadOrCreateUiFont(MAINMENU_FONT_FAMILY, 34, FALSE, &menuFont)) ok = false;
     return ok;
 }
 
@@ -188,6 +176,7 @@ static void DrawTitle() {
     const int right = SCREEN_WIDTH - MENU_RIGHT_MARGIN;
     const int left = right - MENU_TITLE_WIDTH;
     const D3DCOLOR titleColor = D3DCOLOR_XRGB(255, 255, 255);
+    const DWORD format = DT_RIGHT | DT_VCENTER | DT_SINGLELINE;
 
     RECT personaRect = {
         left,
@@ -195,13 +184,7 @@ static void DrawTitle() {
         right,
         MENU_TITLE_TOP + MENU_TITLE_LINE_HEIGHT
     };
-    titleFont->DrawTextA(
-        spriteBrush,
-        "PERSONA",
-        -1,
-        &personaRect,
-        DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-        titleColor);
+    titleFont->DrawTextA(spriteBrush, "PERSONA", -1, &personaRect, format, titleColor);
 
     RECT arenaRect = {
         left,
@@ -209,13 +192,7 @@ static void DrawTitle() {
         right,
         MENU_TITLE_TOP + (MENU_TITLE_LINE_HEIGHT * 2)
     };
-    titleFont->DrawTextA(
-        spriteBrush,
-        "ARENA",
-        -1,
-        &arenaRect,
-        DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-        titleColor);
+    titleFont->DrawTextA(spriteBrush, "ARENA", -1, &arenaRect, format, titleColor);
 }
 
 void drawMenuOptions() {
@@ -224,9 +201,9 @@ void drawMenuOptions() {
     UpdateOptionRects();
 
     for (int i = 0; i < MENU_OPTION_COUNT; i++) {
-        const bool selected = (i == currentSelection);
-        const D3DCOLOR textColor = selected
-            ? D3DCOLOR_XRGB(255, 230, 80)
+        // Same as old yellow highlight: selected text color changes (now black).
+        const D3DCOLOR textColor = (i == currentSelection)
+            ? D3DCOLOR_XRGB(0, 0, 0)
             : D3DCOLOR_XRGB(255, 255, 255);
 
         menuFont->DrawTextA(
@@ -284,11 +261,20 @@ static void UpdateMenuInput(int& choice) {
         }
     }
 
+    if (hoveredOption != g_LastHoveredOption) {
+        if (hoveredOption >= 0) {
+            g_SoundManager.PlaySelectionSound();
+        }
+        g_LastHoveredOption = hoveredOption;
+    }
+
     if (upPressed && !g_MenuUpHeld) {
         currentSelection = (currentSelection - 1 + MENU_OPTION_COUNT) % MENU_OPTION_COUNT;
+        g_SoundManager.PlaySelectionSound();
     }
     if (downPressed && !g_MenuDownHeld) {
         currentSelection = (currentSelection + 1) % MENU_OPTION_COUNT;
+        g_SoundManager.PlaySelectionSound();
     }
 
     g_MenuUpHeld = upPressed;
@@ -311,6 +297,7 @@ void ResetMenuInputState() {
     g_MenuDownHeld = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
     g_MenuEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
     g_MenuClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+    g_LastHoveredOption = -1;
 }
 
 void mainMenu(int& choice) {

@@ -1,5 +1,6 @@
 #include "stageSelect.h"
 #include "input.h"
+#include "audio.h"
 #include <cstdio>
 
 StageInfo g_Stages[] = {
@@ -36,6 +37,7 @@ enum StageUiFocus {
 
 // Yellow only while the mouse is over a control (not on enter).
 static int g_StageUiFocus = StageUi_None;
+static int g_LastStageUiFocus = StageUi_None;
 
 static const D3DCOLOR STAGE_COLOR_NORMAL = D3DCOLOR_XRGB(255, 255, 255);
 static const D3DCOLOR STAGE_COLOR_SELECTED = D3DCOLOR_XRGB(255, 230, 80);
@@ -60,7 +62,7 @@ static bool CreateStageUiFont(const char* familyName, INT height, ID3DXFont** ou
 static bool LoadOrCreateStageUiFont(INT height, ID3DXFont** outFont) {
     if (*outFont) return true;
 
-    if (!CreateStageUiFont(HUD_FONT_FAMILY, height, outFont)) {
+    if (!CreateStageUiFont(NORMAL_FONT_FAMILY, height, outFont)) {
         if (*outFont) {
             (*outFont)->Release();
             *outFont = nullptr;
@@ -79,12 +81,8 @@ static bool LoadStageFont() {
     }
 
     if (!g_LoadedStageFontPath) {
-        const char* fontCandidates[] = { HUD_FONT_FILE, HUD_FONT_FILE_ALT };
-        for (const char* path : fontCandidates) {
-            if (AddFontResourceExA(path, FR_PRIVATE, 0) != 0) {
-                g_LoadedStageFontPath = path;
-                break;
-            }
+        if (AddFontResourceExA(NORMAL_FONT_FILE, FR_PRIVATE, 0) != 0) {
+            g_LoadedStageFontPath = NORMAL_FONT_FILE;
         }
     }
 
@@ -158,12 +156,13 @@ static void UpdateStageUiHitboxes() {
     const float offsetX = ((float)SCREEN_WIDTH - previewW) * 0.5f;
     const float offsetY = 160.0f;
 
-    g_StageLeftHit = { (LONG)(offsetX - 90.0f), (LONG)(offsetY + previewH * 0.5f - 28.0f),
-                       (LONG)(offsetX - 20.0f), (LONG)(offsetY + previewH * 0.5f + 28.0f) };
-    g_StageRightHit = { (LONG)(offsetX + previewW + 20.0f), (LONG)(offsetY + previewH * 0.5f - 28.0f),
-                        (LONG)(offsetX + previewW + 90.0f), (LONG)(offsetY + previewH * 0.5f + 28.0f) };
-    g_StageConfirmHit = { (LONG)(offsetX + previewW * 0.5f - 120.0f), 620,
-                          (LONG)(offsetX + previewW * 0.5f + 120.0f), 670 };
+    g_StageLeftHit = { (LONG)(offsetX - 110.0f), (LONG)(offsetY + previewH * 0.5f - 48.0f),
+                       (LONG)(offsetX - 10.0f), (LONG)(offsetY + previewH * 0.5f + 48.0f) };
+    g_StageRightHit = { (LONG)(offsetX + previewW + 10.0f), (LONG)(offsetY + previewH * 0.5f - 48.0f),
+                        (LONG)(offsetX + previewW + 110.0f), (LONG)(offsetY + previewH * 0.5f + 48.0f) };
+    // Wide / tall hitbox so Confirm is easy to click (text stays centered inside).
+    g_StageConfirmHit = { (LONG)(offsetX + previewW * 0.5f - 220.0f), 600,
+                          (LONG)(offsetX + previewW * 0.5f + 220.0f), 690 };
 }
 
 static void DrawStagePreview() {
@@ -226,7 +225,7 @@ static void DrawStagePreview() {
         g_StageFont->DrawTextA(spriteBrush, ">", -1, &g_StageRightHit, DT_CENTER | DT_VCENTER | DT_SINGLELINE, rightColor);
 
         RECT nameRect = { 0, 540, SCREEN_WIDTH, 590 };
-        g_StageFont->DrawTextA(spriteBrush, stage.name, -1, &nameRect, DT_CENTER | DT_TOP, STAGE_COLOR_SELECTED);
+        g_StageFont->DrawTextA(spriteBrush, stage.name, -1, &nameRect, DT_CENTER | DT_TOP, STAGE_COLOR_NORMAL);
 
         char counterText[32];
         sprintf_s(counterText, "%d / %d", g_SelectedStageIndex + 1, STAGE_COUNT);
@@ -266,10 +265,8 @@ static void UpdateStageUiFocusFromCursor() {
     POINT cursorPt = {};
     if (!GetGameCursorPos(cursorPt)) {
         g_StageUiFocus = StageUi_None;
-        return;
     }
-
-    if (PtInRect(&g_StageLeftHit, cursorPt)) {
+    else if (PtInRect(&g_StageLeftHit, cursorPt)) {
         g_StageUiFocus = StageUi_Left;
     }
     else if (PtInRect(&g_StageRightHit, cursorPt)) {
@@ -280,6 +277,13 @@ static void UpdateStageUiFocusFromCursor() {
     }
     else {
         g_StageUiFocus = StageUi_None;
+    }
+
+    if (g_StageUiFocus != g_LastStageUiFocus) {
+        if (g_StageUiFocus != StageUi_None) {
+            g_SoundManager.PlaySelectionSound();
+        }
+        g_LastStageUiFocus = g_StageUiFocus;
     }
 }
 
@@ -339,6 +343,7 @@ void ResetStageSelectInputState() {
     g_StageBackHeld = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
     g_StageClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_StageUiFocus = StageUi_None;
+    g_LastStageUiFocus = StageUi_None;
 }
 
 void stageSelectScreen(int& choice) {
