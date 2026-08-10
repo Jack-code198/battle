@@ -73,6 +73,7 @@ static void ReleaseJokerSheet(JokerTexture& tex) {
     }
 }
 
+// Build a source RECT from Joker's grid sprite sheet (same formula as Makoto).
 static void SetJokerFrameRect(RECT& rect, const JokerTexture& tex, int frameIndex) {
     int frame = frameIndex;
     if (frame < 0) frame = 0;
@@ -103,7 +104,7 @@ Joker::Joker()
     : currentFrame(0), maxFrame(4), frameCounter(0), currentState(JOKER_STAND)
     , isStunned(false), isReturningToPosition(false)
     , damageAnimLength(4), damageTimer(0), stunTimer(0)
-    , isDamageAnimating(false), isForceResetting(false), bForceReset(false)
+    , isDamageAnimating(false), isForceResetting(false), forceResetRequested(false)
     , shouldReturnToOriginal(false), isActive(true), trainingIdleFrames(0)
 {
     originalPosition = D3DXVECTOR3(JOKER_SPAWN_X, CHARACTER_GROUND_Y, 0);
@@ -111,7 +112,7 @@ Joker::Joker()
     facingDirection = -1;
     health = JOKER_MAX_HEALTH;
     maxHealth = JOKER_MAX_HEALTH;
-    velocity = 4;
+    velocity = JOKER_MOVE_SPEED;
     isHit = false;
     hitStunTimer = 0;
     isDead = false;
@@ -158,8 +159,12 @@ void Joker::ClampPosition() {
 
     ClampJokerCenterX(position.x);
 
-    if (position.y > CHARACTER_GROUND_Y + 20.0f) position.y = CHARACTER_GROUND_Y + 20.0f;
-    if (position.y < 200.0f) position.y = 200.0f;
+    if (position.y > CHARACTER_GROUND_Y + JOKER_MAX_GROUND_SLACK) {
+        position.y = CHARACTER_GROUND_Y + JOKER_MAX_GROUND_SLACK;
+    }
+    if (position.y < JOKER_MIN_SCREEN_Y) {
+        position.y = JOKER_MIN_SCREEN_Y;
+    }
 }
 
 void Joker::ResetAllStates() {
@@ -167,7 +172,7 @@ void Joker::ResetAllStates() {
     isStunned = false;
     isReturningToPosition = false;
     isDamageAnimating = false;
-    bForceReset = false;
+    forceResetRequested = false;
     damageTimer = 0;
     stunTimer = 0;
     currentFrame = 0;
@@ -242,10 +247,10 @@ void Joker::ReturnToOriginalPosition() {
 void Joker::Update() {
     if (isDead) return;
 
-    if (isForceResetting || bForceReset) {
+    if (isForceResetting || forceResetRequested) {
         position = originalPosition;
         isForceResetting = false;
-        bForceReset = false;
+        forceResetRequested = false;
         ResetAllStates();
         UpdateHurtbox();
         return;

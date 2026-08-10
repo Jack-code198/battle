@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+// Stage select screen: preview textures, keyboard/mouse navigation, confirm/back.
+
 struct StageInfo {
     const char* name;
     const char* texturePath;

@@ -1,6 +1,9 @@
 #pragma once
 #include <cmath>
 
+// Physics / collision helpers (BMCS2224).
+// Axis-aligned boxes used for hurtboxes, hitboxes, and body push resolution.
+
 struct AABB {
     float x, y;
     float width, height;
@@ -15,6 +18,7 @@ struct AABB {
 
 class CollisionHelper {
 public:
+    // Standard AABB overlap test.
     static bool AABBIntersect(const AABB& a, const AABB& b) {
         return a.x < b.x + b.width &&
             a.x + a.width > b.x &&
@@ -22,6 +26,7 @@ public:
             a.y + a.height > b.y;
     }
 
+    // Expand sourceBox by velocity then test overlap (simple swept AABB).
     static bool SweptAABBIntersects(const AABB& sourceBox, const AABB& targetBox, float vx, float vy) {
         if (AABBIntersect(sourceBox, targetBox)) return true;
         if (vx == 0.0f && vy == 0.0f) return false;

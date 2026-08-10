@@ -118,6 +118,8 @@ static int ClampMakotoFrameIndex(const MakotoTexture& tex, int frameIndex) {
     return frameIndex;
 }
 
+// Build a source RECT from a grid sprite sheet:
+// left/top = cellSize * (frame % cols, frame / cols). Never hardcode each frame RECT.
 static void SetMakotoFrameRect(RECT& rect, const MakotoTexture& tex, int frameIndex) {
     int frame = ClampMakotoFrameIndex(tex, frameIndex);
     rect.left = makotoSpriteWidth * (frame % tex.cols);
@@ -126,6 +128,7 @@ static void SetMakotoFrameRect(RECT& rect, const MakotoTexture& tex, int frameIn
     rect.bottom = rect.top + makotoSpriteHeight;
 }
 
+// Idle feet Y measured from each idle-cell sprite (pixel row of soles inside the 256 cell).
 static float GetMakotoIdleFeetY(int frameIndex) {
     static const float kIdleFeetY[] = {
         54.0f, 55.0f, 55.0f, 64.0f, 69.0f, 69.0f, 69.0f, 69.0f, 55.0f, 54.0f
@@ -413,7 +416,7 @@ Makoto::Makoto()
     facingDirection = 1;
     health = MAKOTO_MAX_HEALTH;
     maxHealth = MAKOTO_MAX_HEALTH;
-    velocity = 6;
+    velocity = MAKOTO_MOVE_SPEED;
     maxFrame = GetMaxFrameForState(INTRO);
     UpdateScaledHurtbox();
 }
@@ -537,17 +540,19 @@ void Makoto::CheckAttackCollision(Joker& enemy) {
     default: return;
     }
     if (currentState == DASH) {
-        if (!dashHasHit && currentFrame >= 1 && currentFrame <= 6) {
-            float dashW = 36.0f * s;
-            float dashH = 40.0f * s;
+        if (!dashHasHit &&
+            currentFrame >= DASH_HIT_START_FRAME &&
+            currentFrame <= DASH_HIT_END_FRAME) {
+            float dashW = DASH_HITBOX_WIDTH * s;
+            float dashH = DASH_HITBOX_HEIGHT * s;
             float dashX = 0.0f;
-            if (facingDirection == 1) dashX = position.x + 10.0f * s;
-            else dashX = position.x - 10.0f * s - dashW;
-            float dashY = position.y - 50.0f * s;
+            if (facingDirection == 1) dashX = position.x + DASH_HITBOX_FORWARD * s;
+            else dashX = position.x - DASH_HITBOX_FORWARD * s - dashW;
+            float dashY = position.y - DASH_HITBOX_UP * s;
 
             AABB dashBox = { dashX, dashY, dashW, dashH };
             if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox())) {
-                const_cast<Joker&>(enemy).TakeDamage(28);
+                const_cast<Joker&>(enemy).TakeDamage(DASH_HIT_DAMAGE);
                 dashHasHit = true;
                 OnMeleeHitConnected(enemy);
             }
@@ -815,7 +820,7 @@ void Makoto::Update() {
     }
 
     if (currentState == DASH) {
-        position.x += (float)facingDirection * (velocity * 3.5f) * steps;
+        position.x += (float)facingDirection * (velocity * MAKOTO_DASH_SPEED_MULTIPLIER) * steps;
         ClampMakotoCenterX(position.x);
         maxFrame = GetMaxFrameForState(DASH);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {

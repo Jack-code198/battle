@@ -1,7 +1,10 @@
 #pragma once
 #include "../Fighter.h"
 #include "../../config.h"
-// Makoto 状态枚举
+
+// Player 1 fighter (OO subclass of Fighter).
+// Owns Makoto animation state, melee/persona skills, gravity jump, and sprite rendering.
+
 enum MakotoState {
     STANCE, IDLE, WALK, RUN, DASH, JUMP,
     ATTACK, CROUCH, CROUCH_ATTACK, DODGE_FORWARD, DODGE_BACKWARD, GUARD, GUARD_AIR,
