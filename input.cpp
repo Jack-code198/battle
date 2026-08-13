@@ -3,6 +3,7 @@
 #include "game_logic.h"
 #include "audio.h"
 #include "ui.h"
+#include <cstring>
 
 HWND g_hWnd = NULL;
 WNDCLASS wndClass;
@@ -13,6 +14,91 @@ BYTE diKeys[256];
 bool g_WindowHasFocus = true;
 static HCURSOR g_GameCursor = NULL;
 static bool g_MenuCursorEnabled = true;
+
+InputManager g_InputManager;
+
+InputManager::InputManager()
+    : directInput(nullptr)
+    , keyboardDevice(nullptr) {
+    ZeroMemory(keyState, sizeof(keyState));
+}
+
+InputManager::~InputManager() {
+    Cleanup();
+}
+
+bool InputManager::Create(HWND windowHandle) {
+    Cleanup();
+    if (!windowHandle) return false;
+
+    HRESULT hr = DirectInput8Create(
+        GetModuleHandle(NULL),
+        0x0800,
+        IID_IDirectInput8,
+        (void**)&directInput,
+        NULL);
+    if (FAILED(hr) || !directInput) return false;
+
+    hr = directInput->CreateDevice(GUID_SysKeyboard, &keyboardDevice, NULL);
+    if (FAILED(hr) || !keyboardDevice) {
+        Cleanup();
+        return false;
+    }
+
+    keyboardDevice->SetDataFormat(&c_dfDIKeyboard);
+    keyboardDevice->SetCooperativeLevel(windowHandle, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+    keyboardDevice->Acquire();
+
+    // Keep legacy globals in sync for existing call sites.
+    dInput = directInput;
+    dInputKeyboardDevice = keyboardDevice;
+    return true;
+}
+
+void InputManager::Cleanup() {
+    if (keyboardDevice) {
+        keyboardDevice->Unacquire();
+        keyboardDevice->Release();
+        keyboardDevice = nullptr;
+    }
+    if (directInput) {
+        directInput->Release();
+        directInput = nullptr;
+    }
+    dInputKeyboardDevice = nullptr;
+    dInput = nullptr;
+    ZeroMemory(keyState, sizeof(keyState));
+    ZeroMemory(diKeys, sizeof(diKeys));
+}
+
+void InputManager::Poll(bool windowHasFocus) {
+    if (!windowHasFocus) {
+        ZeroMemory(keyState, sizeof(keyState));
+        ZeroMemory(diKeys, sizeof(diKeys));
+        return;
+    }
+    if (!keyboardDevice) return;
+
+    HRESULT hr = keyboardDevice->GetDeviceState(256, keyState);
+    if (FAILED(hr)) {
+        keyboardDevice->Acquire();
+        ZeroMemory(keyState, sizeof(keyState));
+    }
+    memcpy(diKeys, keyState, sizeof(diKeys));
+}
+
+bool InputManager::IsKeyDown(int directInputKey) const {
+    if (directInputKey < 0 || directInputKey >= 256) return false;
+    return (keyState[directInputKey] & 0x80) != 0;
+}
+
+bool IsGameKeyDown(int directInputKey) {
+    return g_WindowHasFocus && g_InputManager.IsKeyDown(directInputKey);
+}
+
+bool IsGameMouseDown(int virtualKey) {
+    return g_WindowHasFocus && (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+}
 
 static void ApplyMenuCursorState() {
     if (!g_hWnd) return;
@@ -109,37 +195,15 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
 }
 
 void CreateDirectInput() {
-    DirectInput8Create(GetModuleHandle(NULL), 0x0800, IID_IDirectInput8, (void**)&dInput, NULL);
-    dInput->CreateDevice(GUID_SysKeyboard, &dInputKeyboardDevice, NULL);
-    dInputKeyboardDevice->SetDataFormat(&c_dfDIKeyboard);
-    dInputKeyboardDevice->SetCooperativeLevel(g_hWnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
-    dInputKeyboardDevice->Acquire();
+    g_InputManager.Create(g_hWnd);
 }
 
 void CleanUpDirectInput() {
-    if (dInputKeyboardDevice) {
-        dInputKeyboardDevice->Unacquire();
-        dInputKeyboardDevice->Release();
-        dInputKeyboardDevice = NULL;
-    }
-    if (dInput) {
-        dInput->Release();
-        dInput = NULL;
-    }
+    g_InputManager.Cleanup();
 }
 
 void GetInput() {
-    if (!g_WindowHasFocus) {
-        ZeroMemory(diKeys, sizeof(diKeys));
-        return;
-    }
-
-    if (dInputKeyboardDevice) {
-        HRESULT hr = dInputKeyboardDevice->GetDeviceState(256, diKeys);
-        if (FAILED(hr)) {
-            dInputKeyboardDevice->Acquire();
-        }
-    }
+    g_InputManager.Poll(g_WindowHasFocus);
 }
 
 bool LoadGameCursor() {

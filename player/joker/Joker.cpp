@@ -13,15 +13,6 @@ extern AttackData sideAttackHitbox;
 extern AttackData attackUpHitbox;
 extern AttackData downAttackHitbox;
 
-static constexpr float kJokerJumpVelocity = -14.0f;
-
-static bool IsGameKeyDown(int dik) {
-    return g_WindowHasFocus && (diKeys[dik] & 0x80);
-}
-
-static bool IsGameMouseDown(int vk) {
-    return g_WindowHasFocus && (GetAsyncKeyState(vk) & 0x8000);
-}
 
 // Same stepping helpers Makoto uses so Joker animates on the shared 60 FPS timer.
 // Returns true only after the last frame has also been held for ticksPerFrame
@@ -290,23 +281,12 @@ void Joker::UpdateScaledHurtbox() {
 }
 
 bool Joker::IsOnGround() const {
-    return position.y >= CHARACTER_GROUND_Y - 0.5f;
+    return position.y >= CHARACTER_GROUND_Y - GROUND_CONTACT_EPSILON;
 }
 
 void Joker::ApplyGravity(int steps) {
-    for (int step = 0; step < steps; ++step) {
-        if (IsOnGround() && verticalVelocity >= 0.0f) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            continue;
-        }
-        verticalVelocity += GRAVITY;
-        position.y += verticalVelocity;
-        if (position.y >= CHARACTER_GROUND_Y) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-        }
-    }
+    // BMCS2224 Physics module: force → acceleration → velocity → position.
+    ApplyPhysicsGravitySteps(steps, verticalVelocity);
 }
 
 void Joker::ClampPosition() {
@@ -897,11 +877,11 @@ void Joker::UpdateHuman(int steps) {
 
         if (isLeftPressed) {
             facingDirection = -1;
-            jumpHorizontalSpeed = -currentVelocity * 1.5f;
+            jumpHorizontalSpeed = -currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER;
         }
         else if (isRightPressed) {
             facingDirection = 1;
-            jumpHorizontalSpeed = currentVelocity * 1.5f;
+            jumpHorizontalSpeed = currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER;
         }
 
         if (isGuardPressed) {
@@ -1141,8 +1121,8 @@ void Joker::UpdateHuman(int steps) {
     else if (isJumpPressed && IsOnGround()) {
         nextState = JOKER_JUMP;
         jumpCount = 1;
-        verticalVelocity = kJokerJumpVelocity;
-        jumpHorizontalSpeed = (moveDirX != 0.0f) ? (moveDirX * currentVelocity * 1.5f) : 0.0f;
+        verticalVelocity = FIGHTER_JUMP_VELOCITY;
+        jumpHorizontalSpeed = (moveDirX != 0.0f) ? (moveDirX * currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER) : 0.0f;
     }
     else if (isDashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = JOKER_DASH;
@@ -1199,9 +1179,9 @@ void Joker::UpdateHuman(int steps) {
             if (nextState == JOKER_JUMP) {
                 // Preserve jump impulse set above (EnterActionState clears frame only).
                 jumpCount = 1;
-                verticalVelocity = kJokerJumpVelocity;
+                verticalVelocity = FIGHTER_JUMP_VELOCITY;
                 jumpHorizontalSpeed = (moveDirX != 0.0f)
-                    ? (moveDirX * currentVelocity * 1.5f)
+                    ? (moveDirX * currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER)
                     : 0.0f;
             }
             if (nextState == JOKER_DODGE) {
@@ -1243,7 +1223,7 @@ void Joker::Update() {
         steps = g_GameTimer.GetLastFramesToUpdate();
     }
     if (steps <= 0) return;
-    if (steps > 4) steps = 4;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled()) {
         UpdateSandbag(steps);
@@ -1396,12 +1376,11 @@ void Joker::DrawBodySprite(LPD3DXSPRITE sprite, JokerTexture& tex, int frame, co
     }
     else if (currentState == JOKER_RECOVER) {
         // Recover starts from a low/downed pose.
-        static const float kRecoverFeetY[] = { 30.0f, 32.0f, 38.0f };
-        const int count = (int)(sizeof(kRecoverFeetY) / sizeof(kRecoverFeetY[0]));
+        const int count = (int)(sizeof(JOKER_RECOVER_FEET_Y) / sizeof(JOKER_RECOVER_FEET_Y[0]));
         int idx = frame;
         if (idx < 0) idx = 0;
         if (idx >= count) idx = count - 1;
-        feetY = kRecoverFeetY[idx];
+        feetY = JOKER_RECOVER_FEET_Y[idx];
     }
     else if (currentState == JOKER_ALL_OUT_MEMBER) {
         // Same scale as normal Joker; high feet so lower portraits aren't clipped underground.

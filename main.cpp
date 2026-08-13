@@ -63,32 +63,31 @@ static void InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     // Font / FontRenderer
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
 
-    // Physics: apply gravity force, integrate velocity & position.
+    // Physics module demo (fighters also use PhysicsBody via ApplyPhysicsGravitySteps).
     g_PhysicsDemo = PhysicsBody();
     g_PhysicsDemo.mass = 1.0f;
     g_PhysicsDemo.position = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-    g_PhysicsDemo.ApplyGravity(GRAVITY);
-    g_PhysicsDemo.Integrate(1.0f / 60.0f);
+    PhysicsWorld::IntegrateGravityOnGround(g_PhysicsDemo, CHARACTER_GROUND_Y, GRAVITY, 1.0f / 60.0f);
 
     // Collision detection (AABB)
-    AABB a = { 0.0f, 0.0f, 40.0f, 60.0f };
-    AABB b = { 20.0f, 10.0f, 40.0f, 60.0f };
-    const bool aabbHit = CollisionHelper::AABBIntersect(a, b);
+    AABB boxA = { 0.0f, 0.0f, 40.0f, 60.0f };
+    AABB boxB = { 20.0f, 10.0f, 40.0f, 60.0f };
+    const bool aabbHit = CollisionHelper::AABBIntersect(boxA, boxB);
 
-    // Frame-miss issue: fast mover uses swept AABB so tunnels still register.
+    // Frame-miss: swept AABB through PhysicsWorld.
     AABB fastMover = { 0.0f, 0.0f, 20.0f, 20.0f };
     AABB thinWall = { 50.0f, 0.0f, 10.0f, 40.0f };
-    const bool sweptHit = CollisionHelper::SweptAABBIntersects(fastMover, thinWall, 80.0f, 0.0f);
+    const bool sweptHit = PhysicsWorld::DetectSweptCollision(fastMover, thinWall, 80.0f, 0.0f);
 
     // Non-axis-aligned OBB
-    OBB obbA = { 100.0f, 100.0f, 30.0f, 20.0f, 0.4f };
-    OBB obbB = { 120.0f, 105.0f, 25.0f, 15.0f, -0.3f };
-    const bool obbHit = CollisionHelper::OBBIntersect(obbA, obbB);
+    OBB orientedA = { 100.0f, 100.0f, 30.0f, 20.0f, 0.4f };
+    OBB orientedB = { 120.0f, 105.0f, 25.0f, 15.0f, -0.3f };
+    const bool obbHit = PhysicsWorld::DetectOrientedCollision(orientedA, orientedB);
 
-    // Overlap resolution issue: push overlapping boxes apart.
+    // Overlap resolution
     float pushX = 0.0f, pushY = 0.0f;
-    AABB moving = a;
-    const bool resolved = CollisionHelper::ResolveAABBOverlap(moving, b, pushX, pushY);
+    AABB moving = boxA;
+    const bool resolved = PhysicsWorld::ResolveOverlap(moving, boxB, pushX, pushY);
 
     g_CollisionSystemsReady = aabbHit && sweptHit && (obbHit || !obbHit) && resolved;
     (void)g_CollisionSystemsReady;
@@ -140,8 +139,16 @@ static void RenderGameOverScreen() {
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
         if (g_FontRenderer.IsReady()) {
-            g_FontRenderer.DrawTextA("GAME OVER", 360.0f, 280.0f, D3DCOLOR_XRGB(255, 80, 80));
-            g_FontRenderer.DrawTextA("R = Retry   ESC = Main Menu", 300.0f, 340.0f, D3DCOLOR_XRGB(255, 255, 255));
+            g_FontRenderer.DrawTextA(
+                "GAME OVER",
+                GAME_OVER_TITLE_X,
+                GAME_OVER_TITLE_Y,
+                D3DCOLOR_XRGB(255, 80, 80));
+            g_FontRenderer.DrawTextA(
+                "R = Retry   ESC = Main Menu",
+                GAME_OVER_HINT_X,
+                GAME_OVER_HINT_Y,
+                D3DCOLOR_XRGB(255, 255, 255));
         }
         g_pD3DDevice->EndScene();
     }
@@ -333,8 +340,8 @@ int main(int argc, char* argv[]) {
         }
 
         DWORD frameElapsed = GetTickCount() - frameStart;
-        if (frameElapsed < 8) {
-            Sleep(8 - frameElapsed);
+        if (frameElapsed < GAME_LOOP_MIN_FRAME_MS) {
+            Sleep(GAME_LOOP_MIN_FRAME_MS - frameElapsed);
         }
     }
 

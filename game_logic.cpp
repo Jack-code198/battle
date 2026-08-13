@@ -1,5 +1,6 @@
 #include "game_logic.h"
 #include "collision.h"
+#include "physics.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
@@ -63,7 +64,9 @@ static void ClampFighterPushX(Fighter& fighter) {
     ClampFighterCenterX(fighter.position.x, box.width * 0.5f);
 }
 
-// Separate overlapping fighters. Sandbag stays put; human is pushed. Otherwise split 50/50.
+// Body push (BMCS2224 Physics / collision response).
+// Side-view fighters separate on X only. Uses AABB detection from CollisionHelper /
+// PhysicsWorld; sandbag stays put while the human is pushed out.
 void ResolveFighterBodyOverlap(Fighter& a, Fighter& b) {
     const AABB boxA = a.GetBodyCollisionBox();
     const AABB boxB = b.GetBodyCollisionBox();
@@ -75,7 +78,6 @@ void ResolveFighterBodyOverlap(Fighter& a, Fighter& b) {
 
     float deltaA = 0.0f;
     float deltaB = 0.0f;
-
     if (overlapLeft > 0.0f && overlapLeft <= overlapRight) {
         deltaA = -overlapLeft;
         deltaB = overlapLeft;
@@ -83,6 +85,17 @@ void ResolveFighterBodyOverlap(Fighter& a, Fighter& b) {
     else if (overlapRight > 0.0f) {
         deltaA = overlapRight;
         deltaB = -overlapRight;
+    }
+
+    // Also exercise PhysicsWorld overlap resolver (horizontal component).
+    float resolvedPushX = 0.0f;
+    float resolvedPushY = 0.0f;
+    AABB movingProbe = boxA;
+    if (PhysicsWorld::ResolveOverlap(movingProbe, boxB, resolvedPushX, resolvedPushY) &&
+        fabsf(resolvedPushX) > fabsf(resolvedPushY) &&
+        fabsf(resolvedPushX) > 0.001f) {
+        deltaA = resolvedPushX;
+        deltaB = -resolvedPushX;
     }
 
     const bool aHuman = a.IsHumanControlled();

@@ -1,7 +1,11 @@
 #pragma once
 #include "config.h"
 
-// 2D rendering module (BMCS2224) - Direct3D 9 device + D3DX sprite present path.
+// =============================================================================
+// 2D rendering module (BMCS2224) — Direct3D 9 + ID3DXSprite.
+// Device create/reset, fullscreen toggle, battle present. Sprite RECTs are
+// computed from sheet cell size / cols / frame index (formula, not hardcoded).
+// =============================================================================
 
 bool InitD3D();
 void Render();

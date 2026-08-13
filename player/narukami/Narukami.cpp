@@ -2,6 +2,7 @@
 #include "../../config.h"
 #include "../../renderer.h"
 #include "../../game_logic.h"
+#include "../../input.h"
 #include <cmath>
 #include <stdio.h>
 
@@ -16,8 +17,8 @@ namespace {
 // Match Makoto intro pacing so the longer 13-frame sheet does not flash by.
 constexpr int kIntroTicks = MAKOTO_INTRO_TICKS;
 constexpr int kActionTicks = MAKOTO_ACTION_TICKS;
-constexpr int kCrossSlashTicks = 6;   // slower than normal melee
-constexpr int kMyriadSummonTicks = 7; // slower Myriad Truths
+constexpr int kCrossSlashTicks = NARUKAMI_CROSS_SLASH_TICKS;   // slower than normal melee
+constexpr int kMyriadSummonTicks = NARUKAMI_MYRIAD_SUMMON_TICKS; // slower Myriad Truths
 constexpr int kLoopSlowTicks = MAKOTO_LOOP_TICKS_SLOW;
 constexpr int kLoopFastTicks = MAKOTO_LOOP_TICKS_FAST;
 constexpr int kIdlePlayTicks = MAKOTO_IDLE_PLAY_TICKS;
@@ -27,10 +28,10 @@ constexpr int kDamageAnimTicks = JOKER_DAMAGE_ANIM_TICKS;
 constexpr int kRecoverAnimTicks = JOKER_RECOVER_ANIM_TICKS;
 constexpr int kDamageGroundHoldTicks = JOKER_DAMAGE_GROUND_HOLD_TICKS;
 constexpr int kIdleWaitFrames = JOKER_IDLE_WAIT_FRAMES;
-constexpr int kHitStunFrames = 20;
+constexpr int kHitStunFrames = NARUKAMI_HIT_STUN_FRAMES;
 
-constexpr float kJumpVelocity = -14.0f;
-constexpr float kAirControlMultiplier = 1.2f;
+constexpr float kJumpVelocity = FIGHTER_JUMP_VELOCITY;
+constexpr float kAirControlMultiplier = NARUKAMI_AIR_CONTROL_MULTIPLIER;
 constexpr float kDashSpeedMultiplier = MAKOTO_DASH_SPEED_MULTIPLIER;
 
 constexpr int kZioDamage = 40;
@@ -117,14 +118,6 @@ void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame
         accumulator -= ticksPerFrame;
         frame = (frame + 1) % frameCount;
     }
-}
-
-bool IsGameKeyDown(int dik) {
-    return g_WindowHasFocus && (diKeys[dik] & 0x80);
-}
-
-bool IsGameMouseDown(int vk) {
-    return g_WindowHasFocus && (GetAsyncKeyState(vk) & 0x8000);
 }
 
 int ClampFrameIndex(const NarukamiTexture& tex, int frameIndex) {
@@ -434,23 +427,12 @@ AABB Narukami::GetBodyCollisionBox() const {
 }
 
 bool Narukami::IsOnGround() const {
-    return position.y >= CHARACTER_GROUND_Y - 0.5f;
+    return position.y >= CHARACTER_GROUND_Y - GROUND_CONTACT_EPSILON;
 }
 
 void Narukami::ApplyGravity(int steps) {
-    for (int step = 0; step < steps; ++step) {
-        if (IsOnGround() && verticalVelocity >= 0.0f) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            continue;
-        }
-        verticalVelocity += GRAVITY;
-        position.y += verticalVelocity;
-        if (position.y >= CHARACTER_GROUND_Y) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-        }
-    }
+    // BMCS2224 Physics module: force → acceleration → velocity → position.
+    ApplyPhysicsGravitySteps(steps, verticalVelocity);
 }
 
 bool Narukami::IsSuperMoveActive() const {
@@ -927,7 +909,7 @@ void Narukami::UpdateHuman(int steps) {
         // Keep air-summon floating so follow-up izanagi_air_attack is not land-cancelled.
         if (currentState == NARUKAMI_PERSONA_AIR_SUMMON) {
             if (position.y > CHARACTER_GROUND_Y - 35.0f * GetCharacterRenderScale()) {
-                position.y = CHARACTER_GROUND_Y - 45.0f * GetCharacterRenderScale();
+                position.y = CHARACTER_GROUND_Y - NARUKAMI_AIR_LIFT_MID * GetCharacterRenderScale();
             }
             verticalVelocity = 0.0f;
         }
@@ -938,7 +920,7 @@ void Narukami::UpdateHuman(int steps) {
             showIzanagi = true;
             izanagiFrame = 0;
             if (followUp == NARUKAMI_NEUTRAL_AIR) {
-                position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale();
+                position.y = CHARACTER_GROUND_Y - NARUKAMI_AIR_LIFT_TALL * GetCharacterRenderScale();
                 verticalVelocity = 0.0f;
                 jumpCount = 1;
             }
@@ -1054,7 +1036,7 @@ void Narukami::UpdateHuman(int steps) {
         if (showIzanagi) {
             verticalVelocity = 0.0f;
             if (position.y > CHARACTER_GROUND_Y - 40.0f * GetCharacterRenderScale()) {
-                position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale();
+                position.y = CHARACTER_GROUND_Y - NARUKAMI_AIR_LIFT_TALL * GetCharacterRenderScale();
             }
         }
         else {
@@ -1173,7 +1155,7 @@ void Narukami::UpdateHuman(int steps) {
     }
     if (isKey4 && TryConsumeSp(kSpCostPersonaAir)) {
         if (IsOnGround()) {
-            position.y = CHARACTER_GROUND_Y - 40.0f * GetCharacterRenderScale();
+            position.y = CHARACTER_GROUND_Y - NARUKAMI_AIR_LIFT_SHORT * GetCharacterRenderScale();
             verticalVelocity = 0.0f;
             jumpCount = 1;
         }
@@ -1189,7 +1171,7 @@ void Narukami::UpdateHuman(int steps) {
         nextState = NARUKAMI_NEUTRAL_AIR;
         showIzanagi = false;
         if (IsOnGround()) {
-            position.y = CHARACTER_GROUND_Y - 40.0f * GetCharacterRenderScale();
+            position.y = CHARACTER_GROUND_Y - NARUKAMI_AIR_LIFT_SHORT * GetCharacterRenderScale();
             verticalVelocity = 0.0f;
             jumpCount = 1;
         }
@@ -1301,7 +1283,7 @@ void Narukami::Update() {
         steps = g_GameTimer.GetLastFramesToUpdate();
     }
     if (steps <= 0) return;
-    if (steps > 4) steps = 4;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled()) {
         UpdateSandbag(steps);

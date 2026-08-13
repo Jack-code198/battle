@@ -96,6 +96,45 @@ inline constexpr float MAKOTO_DASH_SPEED_MULTIPLIER = 3.5f;
 inline constexpr float JOKER_MAX_GROUND_SLACK = 20.0f;
 inline constexpr float JOKER_MIN_SCREEN_Y = 200.0f;
 
+// Ground contact tolerances (shared physics snap).
+inline constexpr float GROUND_CONTACT_EPSILON = 0.5f;
+inline constexpr float GROUND_NEAR_EPSILON = 2.0f;
+
+// Shared jump / air-control (negative Y = up on screen).
+inline constexpr float FIGHTER_JUMP_VELOCITY = -14.0f;
+inline constexpr float FIGHTER_AIR_CONTROL_MULTIPLIER = 1.5f;
+inline constexpr float NARUKAMI_AIR_CONTROL_MULTIPLIER = 1.2f;
+inline constexpr int NARUKAMI_CROSS_SLASH_TICKS = 6;
+inline constexpr int NARUKAMI_MYRIAD_SUMMON_TICKS = 7;
+inline constexpr int NARUKAMI_HIT_STUN_FRAMES = 20;
+// Game loop / frame-timer clamps (named — do not hardcode Sleep/step caps in main).
+inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 8;
+inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 4;
+
+// Measured recover / air-lift offsets (from sprite feet rows — do not guess).
+inline constexpr float MAKOTO_RECOVER_FEET_Y = 32.0f;
+inline constexpr float MAKOTO_SPACE_CHORD_AIR_LIFT = 50.0f;
+inline constexpr float MAKOTO_SPACE_CHORD_AIR_LIFT_FACTOR = 0.35f;
+// Per-frame vertical deltas for Makoto jump sheet (7 frames, measured in Paint).
+inline constexpr float MAKOTO_JUMP_FRAME_OFFSETS[7] = {
+    0.0f, -16.0f, -24.0f, -32.0f, -14.0f, 14.0f, 48.0f
+};
+inline constexpr float MAKOTO_JUMP_OFFSET_SCALE = 0.55f;
+inline constexpr float NARUKAMI_AIR_LIFT_SHORT = 40.0f;
+inline constexpr float NARUKAMI_AIR_LIFT_MID = 45.0f;
+inline constexpr float NARUKAMI_AIR_LIFT_TALL = 50.0f;
+inline constexpr float JOKER_RECOVER_FEET_Y[3] = { 30.0f, 32.0f, 38.0f };
+
+// HUD / font layout for 1024x768 (named so UI RECTs are not magic literals).
+inline constexpr float HUD_NAME_TEXT_WIDTH = 220.0f;
+inline constexpr float HUD_NAME_TEXT_HEIGHT = 32.0f;
+inline constexpr float FONT_DRAW_LINE_HEIGHT = 64.0f;
+inline constexpr float FONT_DRAW_MAX_WIDTH = 800.0f;
+inline constexpr float GAME_OVER_TITLE_X = 360.0f;
+inline constexpr float GAME_OVER_TITLE_Y = 280.0f;
+inline constexpr float GAME_OVER_HINT_X = 300.0f;
+inline constexpr float GAME_OVER_HINT_Y = 340.0f;
+
 // Dash attack active frames / box (unscaled units; multiplied by Makoto draw scale).
 // Box is anchored ahead of Makoto's center toward facing direction.
 inline constexpr int DASH_HIT_START_FRAME = 1;

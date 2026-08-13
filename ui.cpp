@@ -69,17 +69,18 @@ static bool LoadHudFont() {
 static void DrawHudText(const char* text, float x, float y, D3DCOLOR color, bool rightAlign, float alignEdgeX) {
     if (!g_HudFont || !text) return;
 
+    // RECT size from named HUD layout constants (not hardcoded per call).
     RECT rect;
     if (rightAlign) {
-        rect.left = (LONG)(alignEdgeX - 220.0f);
+        rect.left = (LONG)(alignEdgeX - HUD_NAME_TEXT_WIDTH);
         rect.right = (LONG)alignEdgeX;
     }
     else {
         rect.left = (LONG)x;
-        rect.right = (LONG)(x + 220.0f);
+        rect.right = (LONG)(x + HUD_NAME_TEXT_WIDTH);
     }
     rect.top = (LONG)y;
-    rect.bottom = (LONG)(y + 32.0f);
+    rect.bottom = (LONG)(y + HUD_NAME_TEXT_HEIGHT);
 
     UINT format = DT_NOCLIP | (rightAlign ? DT_RIGHT : DT_LEFT);
     g_HudFont->DrawTextA(NULL, text, -1, &rect, format, color);
