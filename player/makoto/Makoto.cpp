@@ -1,7 +1,8 @@
-﻿#include "Makoto.h"
+#include "Makoto.h"
 #include "../../config.h"
 #include "../../renderer.h"
 #include "../../game_logic.h"
+#include "../../input.h"
 #include <cmath>
 #include <float.h>
 #include <stdio.h>
@@ -159,7 +160,7 @@ static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight
     }
     else if (state == RECOVER) {
         // Recover art sits high in the cell — plant soles on the ground.
-        feetY = 32.0f;
+        feetY = MAKOTO_RECOVER_FEET_Y;
     }
 }
 
@@ -230,13 +231,6 @@ static void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksP
     }
 }
 
-static bool IsGameKeyDown(int dik) {
-    return g_WindowHasFocus && (diKeys[dik] & 0x80);
-}
-
-static bool IsGameMouseDown(int vk) {
-    return g_WindowHasFocus && (GetAsyncKeyState(vk) & 0x8000);
-}
 
 static bool ResetsAnimationOnEnter(int state) {
     switch (state) {
@@ -407,23 +401,12 @@ AABB Makoto::GetBodyCollisionBox() const {
 Makoto::~Makoto() {}
 
 bool Makoto::IsOnGround() const {
-    return position.y >= CHARACTER_GROUND_Y - 0.5f;
+    return position.y >= CHARACTER_GROUND_Y - GROUND_CONTACT_EPSILON;
 }
 
 void Makoto::ApplyGravity(int steps) {
-    for (int step = 0; step < steps; ++step) {
-        if (IsOnGround() && verticalVelocity >= 0.0f) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            continue;
-        }
-        verticalVelocity += GRAVITY;
-        position.y += verticalVelocity;
-        if (position.y >= CHARACTER_GROUND_Y) {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-        }
-    }
+    // BMCS2224 Physics module: force → acceleration → velocity → position.
+    ApplyPhysicsGravitySteps(steps, verticalVelocity);
 }
 bool Makoto::CanUseSpaceChord() const {
     return spaceChordBuffer > 0 ||
@@ -454,8 +437,8 @@ void Makoto::BeginAirAttackState(int state, int frames) {
     maxFrame = frames;
     animAccumulator = 0;
     hitThisAttack = false;
-    if (position.y >= CHARACTER_GROUND_Y - 2.0f) {
-        position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale() * 0.35f;
+    if (position.y >= CHARACTER_GROUND_Y - GROUND_NEAR_EPSILON) {
+        position.y = CHARACTER_GROUND_Y - MAKOTO_SPACE_CHORD_AIR_LIFT * GetCharacterRenderScale() * MAKOTO_SPACE_CHORD_AIR_LIFT_FACTOR;
     }
     verticalVelocity = 0.0f;
     jumpCount = 1;
@@ -680,7 +663,7 @@ void Makoto::Update() {
         steps = g_GameTimer.GetLastFramesToUpdate();
     }
     if (steps <= 0) return;
-    if (steps > 4) steps = 4;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled()) {
         UpdateSandbag(steps);
@@ -941,7 +924,7 @@ void Makoto::Update() {
         position.x += jumpHorizontalSpeed * steps;
         ClampMakotoCenterX(position.x);
 
-        float jumpOffsets[7] = { 0.0f, -16.0f, -24.0f, -32.0f, -14.0f, 14.0f, 48.0f };
+        // Measured jump-sheet deltas (config.h) — formula uses frame index, not guessed RECTs.
         float js = GetCharacterRenderScale();
         maxFrame = GetMaxFrameForState(JUMP);
         int prevFrame = currentFrame;
@@ -951,8 +934,10 @@ void Makoto::Update() {
             CompleteOneShotToStance(maxFrame - 1);
         }
         else {
-            for (int f = prevFrame; f < currentFrame && f < 7; ++f) {
-                position.y += jumpOffsets[f] * js * 0.55f;
+            const int jumpOffsetCount =
+                (int)(sizeof(MAKOTO_JUMP_FRAME_OFFSETS) / sizeof(MAKOTO_JUMP_FRAME_OFFSETS[0]));
+            for (int f = prevFrame; f < currentFrame && f < jumpOffsetCount; ++f) {
+                position.y += MAKOTO_JUMP_FRAME_OFFSETS[f] * js * MAKOTO_JUMP_OFFSET_SCALE;
             }
         }
         UpdateScaledHurtbox();
@@ -1147,20 +1132,20 @@ void Makoto::Update() {
         nextState = TAUNT; currentFrame = 0;
     }
     else if (isSpaceAirSide && TryConsumeStamina(STAMINA_COST_ACTION)) {
-        nextState = SIDE_AIR; currentFrame = 0; maxFrame = GetMaxFrameForState(SIDE_AIR); animAccumulator = 0; hitThisAttack = false;        if (position.y >= CHARACTER_GROUND_Y - 2.0f) {
-            position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale() * 0.35f;
+        nextState = SIDE_AIR; currentFrame = 0; maxFrame = GetMaxFrameForState(SIDE_AIR); animAccumulator = 0; hitThisAttack = false;        if (position.y >= CHARACTER_GROUND_Y - GROUND_NEAR_EPSILON) {
+            position.y = CHARACTER_GROUND_Y - MAKOTO_SPACE_CHORD_AIR_LIFT * GetCharacterRenderScale() * MAKOTO_SPACE_CHORD_AIR_LIFT_FACTOR;
         }
         verticalVelocity = 0.0f; jumpCount = 1; spaceChordBuffer = 0;
     }
     else if (isSpaceAirUp) {
-        nextState = UP_AIR; currentFrame = 0; maxFrame = GetMaxFrameForState(UP_AIR); animAccumulator = 0; hitThisAttack = false;        if (position.y >= CHARACTER_GROUND_Y - 2.0f) {
-            position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale() * 0.35f;
+        nextState = UP_AIR; currentFrame = 0; maxFrame = GetMaxFrameForState(UP_AIR); animAccumulator = 0; hitThisAttack = false;        if (position.y >= CHARACTER_GROUND_Y - GROUND_NEAR_EPSILON) {
+            position.y = CHARACTER_GROUND_Y - MAKOTO_SPACE_CHORD_AIR_LIFT * GetCharacterRenderScale() * MAKOTO_SPACE_CHORD_AIR_LIFT_FACTOR;
         }
         verticalVelocity = 0.0f; jumpCount = 1; spaceChordBuffer = 0;
     }
     else if (isJumpPressed) {
         nextState = JUMP; jumpCount = 1; currentFrame = 0;
-        jumpHorizontalSpeed = (moveDirX != 0.0f) ? (moveDirX * (currentVelocity * 1.5f)) : 0.0f;
+        jumpHorizontalSpeed = (moveDirX != 0.0f) ? (moveDirX * (currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER)) : 0.0f;
     }
     else if (isDashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = DASH; dashHasHit = false;

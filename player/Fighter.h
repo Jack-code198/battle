@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 #include "CharacterId.h"
+#include "physics.h"
 
 // Base fighter for the OO game framework (BMCS2224).
 // Makoto / Joker / Narukami inherit this and override Update / Render / combat hooks.
@@ -9,6 +10,11 @@ protected:
     CharacterId characterId;
     int playerSlot;          // 0 = P1 (left), 1 = P2 (right)
     bool humanControlled;    // true = human input; false = sandbag
+    // Shared force-based physics body (gravity / jump / fall).
+    PhysicsBody physicsBody;
+
+    // Integrate gravity for `steps` ticks; keeps character verticalVelocity in sync.
+    void ApplyPhysicsGravitySteps(int steps, float& verticalVelocityIO);
 
 public:
     D3DXVECTOR3 position;

@@ -4,7 +4,11 @@
 #include "player/Fighter.h"
 #include "player/CharacterId.h"
 
-// Shared battle objects: frame timer and the two fighter slots.
+// =============================================================================
+// Game logic module (BMCS2224) — OO fighter factory + shared battle services.
+// CreateFighter() builds Makoto/Joker/Narukami behind Fighter*; body overlap
+// resolve keeps all characters from walking through each other.
+// =============================================================================
 
 extern FrameTimer g_GameTimer;
 extern Fighter* g_Player1;

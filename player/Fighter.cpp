@@ -4,6 +4,7 @@ Fighter::Fighter()
     : characterId(Char_Makoto)
     , playerSlot(0)
     , humanControlled(true)
+    , physicsBody()
     , facingDirection(1)
     , health(MAKOTO_MAX_HEALTH)
     , maxHealth(MAKOTO_MAX_HEALTH)
@@ -17,6 +18,28 @@ Fighter::Fighter()
     , velocity(JOKER_MOVE_SPEED) {
     position = D3DXVECTOR3(0, 0, 0);
     hurtbox = { 0, 0, 0, 0 };
+    physicsBody.mass = 1.0f;
+    physicsBody.position = position;
+}
+
+// Shared gravity path for all fighters (BMCS2224 Physics module).
+// Uses force-based integration so jump/fall is not duplicated per character.
+void Fighter::ApplyPhysicsGravitySteps(int steps, float& verticalVelocityIO) {
+    physicsBody.position = position;
+    physicsBody.velocity.x = 0.0f;
+    physicsBody.velocity.y = verticalVelocityIO;
+    physicsBody.ClearForce();
+
+    for (int step = 0; step < steps; ++step) {
+        PhysicsWorld::IntegrateGravityOnGround(
+            physicsBody,
+            CHARACTER_GROUND_Y,
+            GRAVITY,
+            1.0f);
+    }
+
+    position.y = physicsBody.position.y;
+    verticalVelocityIO = physicsBody.GetVerticalVelocity();
 }
 
 void Fighter::UpdateHurtbox(float offsetX, float offsetY, float width, float height) {

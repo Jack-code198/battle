@@ -72,14 +72,14 @@ void FontRenderer::DrawTextA(
         rect.left = 0;
         rect.top = (LONG)y;
         rect.right = (LONG)rightEdgeX;
-        rect.bottom = (LONG)(y + 64.0f);
+        rect.bottom = (LONG)(y + FONT_DRAW_LINE_HEIGHT);
         font->DrawTextA(nullptr, text, -1, &rect, DT_RIGHT | DT_NOCLIP, color);
     }
     else {
         rect.left = (LONG)x;
         rect.top = (LONG)y;
-        rect.right = (LONG)(x + 800.0f);
-        rect.bottom = (LONG)(y + 64.0f);
+        rect.right = (LONG)(x + FONT_DRAW_MAX_WIDTH);
+        rect.bottom = (LONG)(y + FONT_DRAW_LINE_HEIGHT);
         font->DrawTextA(nullptr, text, -1, &rect, DT_LEFT | DT_NOCLIP, color);
     }
 }
