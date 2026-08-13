@@ -2,15 +2,50 @@
 #include "../Fighter.h"
 #include "JokerAssets.h"
 
-// Player 2 / training sandbag fighter (OO subclass of Fighter).
-// Handles hit reactions, return-to-spawn, and Joker sprite rendering.
+// Joker fighter (OO subclass of Fighter).
+// Supports sandbag training mode and human P1 combat with Arsene pairing.
 
 struct JokerTextureSet;
 
 enum JokerState {
+    JOKER_INTRO,
     JOKER_STAND,
+    JOKER_IDLE,
     JOKER_WALK,
+    JOKER_RUN,
+    JOKER_DASH,
+    JOKER_JUMP,
+    JOKER_GUARD,
+    JOKER_GUARD_AIR,
+    JOKER_ATTACK,
+    JOKER_FORWARD_ATTACK,
+    JOKER_UP_ATTACK,
+    JOKER_DOWN_ATTACK,
+    JOKER_FORWARD_SMASH,
+    JOKER_UP_SMASH,
+    JOKER_DOWN_SMASH,
+    JOKER_NEUTRAL_AIR,
+    JOKER_FORWARD_AIR,
+    JOKER_BACK_AIR,
+    JOKER_DOWN_AIR,
+    JOKER_UP_AIR,
+    JOKER_NEUTRAL_SPECIAL,
+    JOKER_NEUTRAL_AIR_SPECIAL,
+    JOKER_EIHA,
+    JOKER_EIGAON,
+    JOKER_ALL_OUT_ATTACK,
+    JOKER_ALL_OUT_MEMBER,
+    JOKER_ALL_OUT_EFFECT,
+    JOKER_ALL_OUT_FINISH,
+    JOKER_PERSONA_SUMMON,
+    JOKER_PERSONA_RETURN,
+    JOKER_DODGE,
+    JOKER_LEDGEROLL,
+    JOKER_TAUNT,
     JOKER_DAMAGE,
+    JOKER_RECOVER,
+    JOKER_WIN,
+    JOKER_LOSE,
     JOKER_DEAD
 };
 
@@ -19,6 +54,7 @@ private:
     int currentFrame;
     int maxFrame;
     int frameCounter;
+    int animAccumulator;
     int currentState;
     bool isStunned;
     bool isReturningToPosition;
@@ -32,16 +68,43 @@ private:
     bool shouldReturnToOriginal;
     bool isActive;
     int trainingIdleFrames;
+    int idleWaitFrames;
+    int damageGroundHold;
+    int introDisplayHold;
+    int introLastFrame;
+
+    int jumpCount;
+    float jumpHorizontalSpeed;
+    float verticalVelocity;
+    bool hitThisAttack;
+    bool attackButtonHeld;
+    bool dodgeForward;
+    bool skillHit;
+    int skillEffectFrame;
+    int skillEffectAccum;
+    D3DXVECTOR3 skillEffectPos;
 
     void UpdateHurtbox();
     void TryTrainingHeal();
     void BeginHitReaction(float knockbackX);
+    void BeginRecover();
+    void FinishRecoverToStance();
     void ReturnToOriginalPosition();
     void ResetAllStates();
+    void EnterStance();
+    void EnterIdle();
+    void EnterActionState(int state);
     void ClampPosition();
+    void UpdateSandbag(int steps);
+    void UpdateHuman(int steps);
+    void CheckAttackCollision(Fighter& enemy);
+    void UpdateSkillHits(Fighter& enemy, int steps);
+    void ApplyGravity(int steps);
+    bool IsOnGround() const;
     void DrawBodySprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, const D3DXVECTOR3& pos, D3DCOLOR color) const;
     void DrawArseneSprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, D3DCOLOR color) const;
     void DrawEffectSprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, const D3DXVECTOR3& pos, float bodyHeight, float feetY, D3DCOLOR color) const;
+    void DrawSkillEffectOnOpponent(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, D3DCOLOR color) const;
 
 public:
     Joker();
@@ -53,14 +116,11 @@ public:
     void ApplySkillDamage(int damage) override;
     void Reset() override;
 
-    void RenderDebugHitbox(LPD3DXSPRITE sprite);
+    void RenderDebugHitbox(LPD3DXSPRITE sprite) override;
 
-    bool IsDead() const { return isDead; }
-    bool IsHit() const { return isHit; }
-    const D3DXVECTOR3& GetPosition() const { return position; }
-    int GetFacingDirection() const { return facingDirection; }
     AABB GetHurtbox();
-    AABB GetBodyCollisionBox();
+    AABB GetBodyCollisionBox() const override;
+    void UpdateScaledHurtbox() override;
 };
 
 bool LoadJokerTextures();

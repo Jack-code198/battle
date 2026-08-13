@@ -1,6 +1,12 @@
 #include "renderer.h"
 #include "game_logic.h"
 #include "ui.h"
+#include "menuMain.h"
+#include "stageSelect.h"
+#include "playerSelect.h"
+#include "player/makoto/Makoto.h"
+#include "player/joker/Joker.h"
+#include "player/narukami/Narukami.h"
 #include <d3dx9.h>
 
 extern LPDIRECT3DTEXTURE9 texBgCity1;
@@ -50,7 +56,11 @@ bool InitD3D() {
     ZeroMemory(&d3dpp, sizeof(d3dpp));
     d3dpp.Windowed = TRUE;
     d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    d3dpp.BackBufferFormat = D3DFMT_UNKNOWN;
+    d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
+    d3dpp.BackBufferWidth = SCREEN_WIDTH;
+    d3dpp.BackBufferHeight = SCREEN_HEIGHT;
+    d3dpp.hDeviceWindow = g_hWnd;
+    d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
     HRESULT hr = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, g_hWnd,
         D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &g_pD3DDevice);
     return SUCCEEDED(hr);
@@ -82,37 +92,45 @@ void Render() {
                 spriteBrush->SetTransform(&matIdentity);
             }
 
-            if (g_Player1.IsSuperMoveActive()) {
+            if (g_Player1 && g_Player1->IsSuperMoveActive()) {
                 D3DXVECTOR3 zeroPos(0, 0, 0);
-                spriteBrush->Draw(NULL, NULL, NULL, &zeroPos, g_Player1.GetOverlayColor());
+                spriteBrush->Draw(NULL, NULL, NULL, &zeroPos, g_Player1->GetOverlayColor());
             }
 
-            if (g_Player1.GetPosition().x < g_Player2.GetPosition().x) {
-                g_Player1.Render(spriteBrush);
-                g_Player2.Render(spriteBrush);
-            }
-            else {
-                g_Player2.Render(spriteBrush);
-                g_Player1.Render(spriteBrush);
-            }
+            if (g_Player1 && g_Player2) {
+                if (g_Player1->GetPosition().x < g_Player2->GetPosition().x) {
+                    g_Player1->Render(spriteBrush);
+                    g_Player2->Render(spriteBrush);
+                }
+                else {
+                    g_Player2->Render(spriteBrush);
+                    g_Player1->Render(spriteBrush);
+                }
 
-            if (g_ShowDebugHitboxes) {
-                g_Player1.RenderDebugHitbox(spriteBrush);
-                g_Player2.RenderDebugHitbox(spriteBrush);
+                if (g_ShowDebugHitboxes) {
+                    g_Player1->RenderDebugHitbox(spriteBrush);
+                    g_Player2->RenderDebugHitbox(spriteBrush);
+                }
             }
 
             spriteBrush->End();
 
-            DrawBattleHud(
-                spriteBrush,
-                g_Player1.GetHealth(),
-                g_Player1.GetMaxHealth(),
-                g_Player1.GetSp(),
-                g_Player1.GetMaxSp(),
-                g_Player2.GetHealth(),
-                g_Player2.GetMaxHealth(),
-                g_Player2.GetSp(),
-                g_Player2.GetMaxSp());
+            if (g_Player1 && g_Player2) {
+                DrawBattleHud(
+                    spriteBrush,
+                    g_Player1->GetHealth(),
+                    g_Player1->GetMaxHealth(),
+                    g_Player1->GetSp(),
+                    g_Player1->GetMaxSp(),
+                    g_Player1->GetStamina(),
+                    g_Player1->GetMaxStamina(),
+                    g_Player2->GetHealth(),
+                    g_Player2->GetMaxHealth(),
+                    g_Player2->GetSp(),
+                    g_Player2->GetMaxSp(),
+                    g_Player2->GetStamina(),
+                    g_Player2->GetMaxStamina());
+            }
         }
         g_pD3DDevice->EndScene();
     }
@@ -122,6 +140,7 @@ void Render() {
 void CleanUpD3D() {
     CleanUpMakotoTextures();
     CleanUpJokerTextures();
+    CleanUpNarukamiTextures();
     CleanUpHudTextures();
 
     if (texBgCity1) { texBgCity1->Release(); texBgCity1 = NULL; }
@@ -170,6 +189,30 @@ void ToggleFullscreen() {
             SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
         g_IsBorderlessFullscreen = false;
+    }
+
+    // Keep logical 1024x768 backbuffer; Present stretches to the window.
+    if (spriteBrush) spriteBrush->OnLostDevice();
+    NotifyMenuDeviceLost();
+    NotifyStageDeviceLost();
+    NotifyPlayerSelectDeviceLost();
+    NotifyHudDeviceLost();
+
+    d3dpp.Windowed = TRUE;
+    d3dpp.BackBufferWidth = SCREEN_WIDTH;
+    d3dpp.BackBufferHeight = SCREEN_HEIGHT;
+    d3dpp.hDeviceWindow = g_hWnd;
+    d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
+    d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+
+    HRESULT hr = g_pD3DDevice->Reset(&d3dpp);
+    if (SUCCEEDED(hr)) {
+        if (spriteBrush) spriteBrush->OnResetDevice();
+        NotifyMenuDeviceReset();
+        NotifyStageDeviceReset();
+        NotifyPlayerSelectDeviceReset();
+        NotifyHudDeviceReset();
     }
 }
 

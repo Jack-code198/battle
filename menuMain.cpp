@@ -34,6 +34,7 @@ static const int MENU_TITLE_LINE_HEIGHT = 56;
 static const int MENU_TOP_MARGIN = MENU_TITLE_TOP + (MENU_TITLE_LINE_HEIGHT * 2) + 20;
 
 static HRESULT CreateUiFont(const char* familyName, INT height, BOOL italic, ID3DXFont** outFont) {
+    // ClearType on a saturated red background looks muddy; antialias stays sharper.
     return D3DXCreateFontA(
         g_pD3DDevice,
         height,
@@ -42,8 +43,8 @@ static HRESULT CreateUiFont(const char* familyName, INT height, BOOL italic, ID3
         1,
         italic,
         DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
+        OUT_TT_PRECIS,
+        ANTIALIASED_QUALITY,
         DEFAULT_PITCH | FF_DONTCARE,
         familyName,
         outFont);
@@ -132,6 +133,16 @@ void CleanUpMenuTextures() {
         menuBackground->Release();
         menuBackground = NULL;
     }
+}
+
+void NotifyMenuDeviceLost() {
+    if (menuFont) menuFont->OnLostDevice();
+    if (titleFont) titleFont->OnLostDevice();
+}
+
+void NotifyMenuDeviceReset() {
+    if (menuFont) menuFont->OnResetDevice();
+    if (titleFont) titleFont->OnResetDevice();
 }
 
 static void UpdateOptionRects() {
@@ -227,6 +238,7 @@ void renderMainMenu() {
 }
 
 static void ConfirmMenuSelection(int& choice) {
+    g_SoundManager.PlaySelectionSound();
     switch (currentSelection) {
     case 0:
         choice = 1;

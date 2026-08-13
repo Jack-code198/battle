@@ -1,7 +1,6 @@
-#include "Makoto.h"
+﻿#include "Makoto.h"
 #include "../../config.h"
 #include "../../renderer.h"
-#include "../joker/Joker.h"
 #include "../../game_logic.h"
 #include <cmath>
 #include <float.h>
@@ -11,8 +10,6 @@ extern AttackData attackHitbox;
 extern AttackData sideAttackHitbox;
 extern AttackData attackUpHitbox;
 extern AttackData downAttackHitbox;
-extern Makoto g_Player1;
-extern Joker g_Player2;
 extern SpriteSheetBounds g_MessiahSheetBounds;
 extern SpriteSheetBounds g_MegidolaonBurstBounds;
 extern SpriteSheetBounds g_MegidolaonBlastBounds;
@@ -140,11 +137,29 @@ static float GetMakotoIdleFeetY(int frameIndex) {
     return kIdleFeetY[frameIndex];
 }
 
+static float GetMakotoDamageFeetY(int frameIndex) {
+    static const float kFeetY[] = { 51.0f, 50.0f, 45.0f };
+    const int count = (int)(sizeof(kFeetY) / sizeof(kFeetY[0]));
+    if (frameIndex < 0) frameIndex = 0;
+    if (frameIndex >= count) frameIndex = count - 1;
+    return kFeetY[frameIndex];
+}
+
 static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight, float& feetY) {
     bodyHeight = MAKOTO_BODY_HEIGHT;
     feetY = MAKOTO_FEET_Y;
     if (state == IDLE) {
         feetY = GetMakotoIdleFeetY(frameIndex);
+    }
+    else if (state == CROUCH || state == CROUCH_ATTACK) {
+        feetY = MAKOTO_CROUCH_FEET_Y;
+    }
+    else if (state == DAMAGE) {
+        feetY = GetMakotoDamageFeetY(frameIndex);
+    }
+    else if (state == RECOVER) {
+        // Recover art sits high in the cell — plant soles on the ground.
+        feetY = 32.0f;
     }
 }
 
@@ -190,14 +205,20 @@ static bool AllowsMakotoMovement(int state, bool superActive) {
     }
 }
 
+// Hold the last frame for a full tick period before completing (avoids one-frame flashes).
 static bool AdvanceOneShotFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int maxFrame) {
-    if (maxFrame <= 0) return false;
+    if (maxFrame <= 0 || ticksPerFrame <= 0) return false;
     accumulator += steps;
-    while (accumulator >= ticksPerFrame && frame < maxFrame - 1) {
+    while (accumulator >= ticksPerFrame) {
         accumulator -= ticksPerFrame;
-        frame++;
+        if (frame < maxFrame - 1) {
+            frame++;
+        }
+        else {
+            return true;
+        }
     }
-    return frame >= maxFrame - 1;
+    return false;
 }
 
 static void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int frameCount) {
@@ -222,7 +243,6 @@ static bool ResetsAnimationOnEnter(int state) {
     case STANCE:
     case WALK:
     case RUN:
-    case CROUCH:
     case GUARD:
     case GUARD_AIR:
         return false;
@@ -259,77 +279,29 @@ static AABB BuildCenteredHitbox(const D3DXVECTOR3& center, float halfW, float ha
     return { center.x - halfW, center.y - halfH, halfW * 2.0f, halfH * 2.0f };
 }
 
-static void TrySkillHit(Joker& enemy, bool& hitFlag, int damage, const AABB& effectBox) {
+static void TrySkillHit(Fighter& enemy, bool& hitFlag, int damage, const AABB& effectBox) {
     if (hitFlag || enemy.IsDead()) return;
     if (!CollisionHelper::AABBIntersect(effectBox, enemy.GetHurtbox())) return;
     enemy.ApplySkillDamage(damage);
     hitFlag = true;
 }
 
-static void TrySkillHitOnTarget(Joker& enemy, bool& hitFlag, int damage) {
+static void TrySkillHitOnTarget(Fighter& enemy, bool& hitFlag, int damage) {
     if (hitFlag || enemy.IsDead()) return;
     enemy.ApplySkillDamage(damage);
     hitFlag = true;
 }
 
-static D3DXVECTOR3 GetEnemyHurtboxCenter(Joker& enemy) {
+static D3DXVECTOR3 GetEnemyHurtboxCenter(Fighter& enemy) {
     const AABB& hb = enemy.GetHurtbox();
     return D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.5f, 0.0f);
 }
 
-static D3DXVECTOR3 GetAgiMabufuPos(Joker& enemy) {
+static D3DXVECTOR3 GetAgiMabufuPos(Fighter& enemy) {
     const AABB& hb = enemy.GetHurtbox();
     float centerX = hb.x + hb.width * 0.5f;
     float centerY = hb.y + hb.height * 0.5f;
     return D3DXVECTOR3(centerX, centerY, 0.0f);
-}
-
-static AABB GetMakotoBodyCollisionBox(const Makoto& makoto) {
-    float s = GetMakotoDrawScale();
-    AABB box;
-    box.width = MAKOTO_BODY_WIDTH * s;
-    box.height = MAKOTO_BODY_HEIGHT * s;
-    box.x = makoto.position.x - box.width * 0.5f;
-    box.y = makoto.position.y - box.height;
-    return box;
-}
-
-static void ResolveFighterBodyOverlap(Makoto& makoto, Joker& joker) {
-    const AABB makotoBox = GetMakotoBodyCollisionBox(makoto);
-    const AABB jokerBox = joker.GetBodyCollisionBox();
-    if (!CollisionHelper::AABBIntersect(makotoBox, jokerBox)) return;
-
-    const float overlapLeft = (makotoBox.x + makotoBox.width) - jokerBox.x;
-    const float overlapRight = (jokerBox.x + jokerBox.width) - makotoBox.x;
-    if (overlapLeft <= 0.0f && overlapRight <= 0.0f) return;
-
-    float separation = 0.0f;
-    float makotoDelta = 0.0f;
-    float jokerDelta = 0.0f;
-
-    if (overlapLeft > 0.0f && overlapLeft <= overlapRight) {
-        separation = overlapLeft;
-        makotoDelta = -separation;
-        jokerDelta = separation;
-    }
-    else if (overlapRight > 0.0f) {
-        separation = overlapRight;
-        makotoDelta = separation;
-        jokerDelta = -separation;
-    }
-
-    if (JOKER_SANDBAG_MODE) {
-        makoto.position.x += makotoDelta;
-        ClampMakotoCenterX(makoto.position.x);
-    }
-    else {
-        makoto.position.x += makotoDelta * 0.5f;
-        joker.position.x += jokerDelta * 0.5f;
-        ClampMakotoCenterX(makoto.position.x);
-        ClampJokerCenterX(joker.position.x);
-    }
-
-    makoto.UpdateScaledHurtbox();
 }
 
 static D3DXVECTOR3 GetThanatosMaziodynePos(const D3DXVECTOR3& makotoPos, int facingDirection) {
@@ -403,22 +375,33 @@ Makoto::Makoto()
     , orpheusFrame(0), jackfrostFrame(0), agiFrame(0), mabufuFrame(0)
     , thanatosFrame(0), maziodyneFrame(0), slashFrame(0), messiahFrame(0), megidolaonFrame(0)
     , hitAGI(false), hitMabufu(false), hitMaziodyne(false), hitSlash(false), hitMegidolaon(false)
-    , hitThisAttack(false), dashHasHit(false)
+    , hitThisAttack(false), dashHasHit(false), attackButtonHeld(false)
     , spaceChordBuffer(0), spaceWasDown(false), messiahChordConsumed(false)
     , slashAnimTimer(0), slashTotalFrames(0)
     , animAccumulator(0), personaAnimAccumulator(0), noInputFrames(0)
+    , idleWaitFrames(0), damageGroundHold(0)
     , introDisplayHold(0), introLastFrame(0), stanceEntryDelay(0)
     , actionVisualHold(0), actionHoldState(STANCE), actionHoldFrame(0)
     , meleeHitSparkActive(false), meleeHitSparkFrame(0), meleeHitSparkPos(0, 0, 0)
 {
-    float spawnX = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + MAKOTO_SPAWN_FORWARD;
-    position = D3DXVECTOR3(spawnX, CHARACTER_GROUND_Y, 0);
-    facingDirection = 1;
+    SetCharacterId(Char_Makoto);
+    ApplySlotSpawnDefaults();
+    originalPosition = position;
     health = MAKOTO_MAX_HEALTH;
     maxHealth = MAKOTO_MAX_HEALTH;
     velocity = MAKOTO_MOVE_SPEED;
     maxFrame = GetMaxFrameForState(INTRO);
     UpdateScaledHurtbox();
+}
+
+AABB Makoto::GetBodyCollisionBox() const {
+    float s = GetMakotoDrawScale();
+    AABB box;
+    box.width = MAKOTO_BODY_WIDTH * s;
+    box.height = MAKOTO_BODY_HEIGHT * s;
+    box.x = position.x - box.width * 0.5f;
+    box.y = position.y - box.height;
+    return box;
 }
 
 Makoto::~Makoto() {}
@@ -478,7 +461,7 @@ void Makoto::BeginAirAttackState(int state, int frames) {
     jumpCount = 1;
 }
 
-void Makoto::OnMeleeHitConnected(Joker& enemy) {
+void Makoto::OnMeleeHitConnected(Fighter& enemy) {
     RestoreSp(SP_GAIN_ON_HIT);
     const AABB& hb = enemy.GetHurtbox();
     meleeHitSparkPos = D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.35f, 0.0f);
@@ -519,7 +502,7 @@ void Makoto::RenderMeleeHitSpark(LPD3DXSPRITE sprite) {
         D3DCOLOR_ARGB(alpha, 255, 245, 170));
 }
 
-void Makoto::CheckAttackCollision(Joker& enemy) {
+void Makoto::CheckAttackCollision(Fighter& enemy) {
     if (enemy.IsDead()) return;
 
     AttackData* data = nullptr;
@@ -552,7 +535,7 @@ void Makoto::CheckAttackCollision(Joker& enemy) {
 
             AABB dashBox = { dashX, dashY, dashW, dashH };
             if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox())) {
-                const_cast<Joker&>(enemy).TakeDamage(DASH_HIT_DAMAGE);
+                const_cast<Fighter&>(enemy).TakeDamage(DASH_HIT_DAMAGE);
                 dashHasHit = true;
                 OnMeleeHitConnected(enemy);
             }
@@ -584,7 +567,7 @@ void Makoto::CheckAttackCollision(Joker& enemy) {
         AABB enemyBox = enemy.GetHurtbox();
 
         if (!hitThisAttack && CollisionHelper::AABBIntersect(attackBox, enemyBox)) {
-            const_cast<Joker&>(enemy).TakeDamage(data->damage);
+            const_cast<Fighter&>(enemy).TakeDamage(data->damage);
             hitThisAttack = true;
             OnMeleeHitConnected(enemy);
         }
@@ -654,7 +637,7 @@ void Makoto::BeginMessiahSuper() {
     hitMegidolaon = false;
 }
 
-void Makoto::UpdateLiveEffectPositions(Joker& enemy) {
+void Makoto::UpdateLiveEffectPositions(Fighter& enemy) {
     const D3DXVECTOR3 enemyCenter = GetEnemyHurtboxCenter(enemy);
     const D3DXVECTOR3 agiMabufuPos = GetAgiMabufuPos(enemy);
     const int skillFacing = GetSkillFacingDirection(position, enemyCenter);
@@ -689,24 +672,40 @@ void Makoto::UpdateLiveEffectPositions(Joker& enemy) {
 void Makoto::Update() {
     if (isDead) return;
 
-    struct ResolveOverlapOnExit {
-        ~ResolveOverlapOnExit() { ResolveFighterBodyOverlap(g_Player1, g_Player2); }
-    } resolveOverlapOnExit;
-
-    int steps = g_GameTimer.FramesToUpdate();
+    int steps = 0;
+    if (OwnsFrameTimer()) {
+        steps = g_GameTimer.FramesToUpdate();
+    }
+    else {
+        steps = g_GameTimer.GetLastFramesToUpdate();
+    }
     if (steps <= 0) return;
     if (steps > 4) steps = 4;
+
+    if (!IsHumanControlled()) {
+        UpdateSandbag(steps);
+        return;
+    }
+
+    Fighter* opponent = GetOpponent(*this);
+    if (!opponent) return;
+
     const int animSteps = 1;
+
+    // Edge-detect attack so holding LMB does not restart crouch_attack every time it ends.
+    const bool attackDownNow = IsGameMouseDown(VK_LBUTTON);
+    const bool attackJustPressed = attackDownNow && !attackButtonHeld;
+    attackButtonHeld = attackDownNow;
 
     UpdateMeleeHitSpark(steps);
     TickVisualHolds(animSteps);
 
     if (isAGIActive || isMabufuActive || isMaziodyneActive || isMegidolaonActive ||
         isMessiahActive || isThanatosActive || isThanatosSlashActive || isOrpheusActive) {
-        UpdateLiveEffectPositions(g_Player2);
+        UpdateLiveEffectPositions(*opponent);
     }
 
-    currentEnemyPos = g_Player2.GetPosition();
+    currentEnemyPos = opponent->GetPosition();
 
     if (isSuperMoveActive ||
         currentState == SUMMON_1_ORPHEUS ||
@@ -714,12 +713,11 @@ void Makoto::Update() {
         currentState == SUMMON_AIR_MAZIODYNE ||
         currentState == THANATOS_SLASH ||
         currentState == SUMMON_AIR_MESSIAH) {
-        UpdatePersonaLogic(g_Player2, steps);
+        UpdatePersonaLogic(*opponent, steps);
         return;
     }
 
     bool isRunning = IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT);
-    int currentVelocity = isRunning ? (velocity * 2) : velocity;
     bool isMoving = false;
     float moveDirX = 0.0f;
 
@@ -734,6 +732,16 @@ void Makoto::Update() {
         isMoving = true;
     }
 
+    if (isRunning && isMoving) {
+        if (!DrainStaminaWhileRunning(animSteps)) {
+            isRunning = false;
+        }
+    }
+    else {
+        RegenStamina(animSteps);
+    }
+    int currentVelocity = isRunning ? (velocity * 2) : velocity;
+
     if (AllowsMakotoMovement(currentState, isSuperMoveActive) &&
         isMoving && currentState != DASH && currentState != DODGE_FORWARD && currentState != DODGE_BACKWARD) {
         position.x += moveDirX * currentVelocity * steps;
@@ -742,14 +750,29 @@ void Makoto::Update() {
 
     if (currentState == INTRO) {
         maxFrame = GetMaxFrameForState(INTRO);
+        if (maxFrame < 1) maxFrame = 1;
+
+        // Hold the last intro pose before stance so the handoff does not flash.
+        if (introDisplayHold > 0) {
+            currentFrame = introLastFrame;
+            introDisplayHold -= animSteps;
+            if (introDisplayHold <= 0) {
+                introDisplayHold = 0;
+                int stanceFrames = GetMaxFrameForState(STANCE);
+                currentState = STANCE;
+                currentFrame = 0;
+                animAccumulator = 0;
+                noInputFrames = 0;
+                maxFrame = stanceFrames;
+            }
+            UpdateScaledHurtbox();
+            return;
+        }
+
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_INTRO_TICKS, maxFrame)) {
-            introLastFrame = maxFrame - 1;
-            int stanceFrames = GetMaxFrameForState(STANCE);
-            currentState = STANCE;
-            currentFrame = 0;
-            animAccumulator = 0;
-            noInputFrames = 0;
-            maxFrame = stanceFrames;
+            introLastFrame = (maxFrame > 0) ? (maxFrame - 1) : 0;
+            currentFrame = introLastFrame;
+            introDisplayHold = INTRO_END_HOLD_FRAMES;
         }
         UpdateScaledHurtbox();
         return;
@@ -827,7 +850,7 @@ void Makoto::Update() {
             dashHasHit = false;
             CompleteOneShotToStance(maxFrame - 1);
         }
-        CheckAttackCollision(g_Player2);
+        CheckAttackCollision(*opponent);
         UpdateScaledHurtbox();
         return;
     }
@@ -885,7 +908,7 @@ void Makoto::Update() {
             UpdateScaledHurtbox();
             return;
         }
-        if (isEPressed) {
+        if (isEPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
             BeginAirAttackState(SIDE_AIR, GetMaxFrameForState(SIDE_AIR));
             UpdateScaledHurtbox();
             return;
@@ -896,10 +919,18 @@ void Makoto::Update() {
             return;
         }
         if (isAttackPressed) {
-            if (currentFrame >= 3) { BeginAirAttackState(DOWN_AIR, GetMaxFrameForState(DOWN_AIR)); }
-            else { BeginAirAttackState(NEUTRAL_AIR, GetMaxFrameForState(NEUTRAL_AIR)); }
-            UpdateScaledHurtbox();
-            return;
+            if (currentFrame >= 3) {
+                if (TryConsumeStamina(STAMINA_COST_ACTION)) {
+                    BeginAirAttackState(DOWN_AIR, GetMaxFrameForState(DOWN_AIR));
+                    UpdateScaledHurtbox();
+                    return;
+                }
+            }
+            else {
+                BeginAirAttackState(NEUTRAL_AIR, GetMaxFrameForState(NEUTRAL_AIR));
+                UpdateScaledHurtbox();
+                return;
+            }
         }        static bool spaceWasReleased = true;
         if (!isJumpPressed) spaceWasReleased = true;
         if (isJumpPressed && spaceWasReleased && jumpCount < 2) {
@@ -993,7 +1024,7 @@ void Makoto::Update() {
             dashHasHit = false;
             CompleteOneShotToStance(maxFrame - 1);
         }
-        CheckAttackCollision(g_Player2);
+        CheckAttackCollision(*opponent);
         UpdateScaledHurtbox();
         return;
     }
@@ -1002,16 +1033,27 @@ void Makoto::Update() {
         currentState == ATTACK_UP || currentState == DOWN_ATTACK) {
         maxFrame = GetMaxFrameForState(currentState);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {
-            CompleteOneShotToStance(maxFrame - 1);
+            // Still holding crouch → return to crouch (avoids a 1-frame standing flash).
+            if (currentState == CROUCH_ATTACK && IsGameKeyDown(DIK_C)) {
+                currentState = CROUCH;
+                maxFrame = GetMaxFrameForState(CROUCH);
+                currentFrame = (maxFrame > 0) ? (maxFrame - 1) : 0;
+                animAccumulator = 0;
+                hitThisAttack = false;
+                actionVisualHold = 0;
+            }
+            else {
+                CompleteOneShotToStance(maxFrame - 1);
+            }
         }
-        CheckAttackCollision(g_Player2);
+        CheckAttackCollision(*opponent);
         UpdateScaledHurtbox();
         return;
     }
 
     bool isJumpPressed = IsGameKeyDown(DIK_SPACE);
     bool isDashPressed = IsGameKeyDown(DIK_J);
-    bool isAttackPressed = IsGameMouseDown(VK_LBUTTON);
+    bool isAttackPressed = attackJustPressed;
     bool isDodgePressed = IsGameMouseDown(VK_RBUTTON);
     bool isGuardPressed = IsGameKeyDown(DIK_I);
     bool isCrouchPressed = IsGameKeyDown(DIK_C);
@@ -1035,7 +1077,7 @@ void Makoto::Update() {
     bool isSpaceAirUp = isAtkUpPressed && canUseSpaceChord;
     bool isThanatosSlashPressed = IsGameKeyDown(DIK_5);
 
-    bool hasAnyInput = isMoving || isJumpPressed || isDashPressed || isAttackPressed || isDodgePressed ||
+    bool hasAnyInput = isMoving || isJumpPressed || isDashPressed || attackDownNow || isDodgePressed ||
         isGuardPressed || isCrouchPressed || isSideAtkPressed || isAtkUpPressed || isDownPressed ||
         isTauntPressed || isSummon1 || isSummon2 || isSummonAirThanatos || isSummonAirMessiah ||
         isSpaceAirSide || isSpaceAirUp || isThanatosSlashPressed;
@@ -1099,12 +1141,12 @@ void Makoto::Update() {
         isSuperMoveActive = true; superMoveTimer = 0; overlayColor = D3DCOLOR_ARGB(0, 0, 0, 0);
         isThanatosSlashActive = true; slashFrame = 0; hitSlash = false;
         thanatosSlashAnimationComplete = false;
-        slashPos = GetThanatosSlashPos(GetEnemyHurtboxCenter(g_Player2), facingDirection);
+        slashPos = GetThanatosSlashPos(GetEnemyHurtboxCenter(*opponent), facingDirection);
     }
     else if (isTauntPressed) {
         nextState = TAUNT; currentFrame = 0;
     }
-    else if (isSpaceAirSide) {
+    else if (isSpaceAirSide && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = SIDE_AIR; currentFrame = 0; maxFrame = GetMaxFrameForState(SIDE_AIR); animAccumulator = 0; hitThisAttack = false;        if (position.y >= CHARACTER_GROUND_Y - 2.0f) {
             position.y = CHARACTER_GROUND_Y - 50.0f * GetCharacterRenderScale() * 0.35f;
         }
@@ -1120,19 +1162,19 @@ void Makoto::Update() {
         nextState = JUMP; jumpCount = 1; currentFrame = 0;
         jumpHorizontalSpeed = (moveDirX != 0.0f) ? (moveDirX * (currentVelocity * 1.5f)) : 0.0f;
     }
-    else if (isDashPressed) {
+    else if (isDashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = DASH; dashHasHit = false;
     }
-    else if (isDodgePressed) {
+    else if (isDodgePressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         bool isLeftPressed = IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
         bool isRightPressed = IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
         if (isLeftPressed && !isRightPressed) nextState = DODGE_BACKWARD;
         else if (isRightPressed && !isLeftPressed) nextState = DODGE_FORWARD;
         else nextState = (facingDirection == 1) ? DODGE_BACKWARD : DODGE_FORWARD;
     }
-    else if (isDownPressed && isAttackPressed) { nextState = DOWN_ATTACK; }
-    else if (isSideAtkPressed) { nextState = SIDE_ATTACK; }
-    else if (isAtkUpPressed) { nextState = ATTACK_UP; }
+    else if (isDownPressed && isAttackPressed && TryConsumeStamina(STAMINA_COST_ACTION)) { nextState = DOWN_ATTACK; }
+    else if (isSideAtkPressed && TryConsumeStamina(STAMINA_COST_ACTION)) { nextState = SIDE_ATTACK; }
+    else if (isAtkUpPressed && TryConsumeStamina(STAMINA_COST_ACTION)) { nextState = ATTACK_UP; }
     else if (isCrouchPressed && isAttackPressed) { nextState = CROUCH_ATTACK; }
     else if (isAttackPressed) { nextState = ATTACK; }
     else if (isGuardPressed) { nextState = IsOnGround() ? GUARD : GUARD_AIR; }
@@ -1172,8 +1214,13 @@ void Makoto::Update() {
             break;
         case GUARD:
         case GUARD_AIR:
-        case CROUCH:
             AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, MAKOTO_LOOP_TICKS_SLOW, maxFrame);
+            break;
+        case CROUCH:
+            // Hold C: stay on the crouched pose (last cell). Release C returns to stance.
+            if (maxFrame > 0) {
+                currentFrame = maxFrame - 1;
+            }
             break;
         default:
             break;
@@ -1218,7 +1265,7 @@ void Makoto::FinishPersonaSequence() {
     personaAnimAccumulator = 0;
 }
 
-void Makoto::UpdatePersonaLogic(Joker& enemy, int steps) {
+void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
     ApplyGravity(steps);
 
     if (isSuperMoveActive) {
@@ -1384,7 +1431,9 @@ void Makoto::UpdatePersonaLogic(Joker& enemy, int steps) {
 void Makoto::Render(LPD3DXSPRITE sprite) {
     if (isDead) return;
 
-    UpdateLiveEffectPositions(g_Player2);
+    if (Fighter* opponent = GetOpponent(*this)) {
+        UpdateLiveEffectPositions(*opponent);
+    }
 
     const MakotoTexture* bodyTex = nullptr;
     int bodyFrame = 0;
@@ -1463,8 +1512,172 @@ void Makoto::RenderDebugHitbox(LPD3DXSPRITE sprite) {
     DrawDebugRect(sprite, hurtbox.x, hurtbox.y, hurtbox.width, hurtbox.height, D3DCOLOR_ARGB(160, 64, 160, 255));
 }
 
+void Makoto::BeginSandbagHitReaction() {
+    isHit = true;
+    hitStunTimer = 20;
+    currentState = DAMAGE;
+    currentFrame = 0;
+    animAccumulator = 0;
+    damageGroundHold = 0;
+    idleWaitFrames = 0;
+    maxFrame = GetMaxFrameForState(DAMAGE);
+    if (maxFrame < 1) maxFrame = 1;
+    UpdateScaledHurtbox();
+}
+
+void Makoto::BeginSandbagRecover() {
+    isHit = false;
+    currentState = RECOVER;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(RECOVER);
+    if (!makotoRecover.texture || maxFrame < 1) {
+        FinishSandbagRecover();
+        return;
+    }
+}
+
+void Makoto::FinishSandbagRecover() {
+    position = originalPosition;
+    isHit = false;
+    hitStunTimer = 0;
+    idleWaitFrames = 0;
+    damageGroundHold = 0;
+    currentState = STANCE;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(STANCE);
+    UpdateScaledHurtbox();
+}
+
+void Makoto::UpdateSandbag(int steps) {
+    const int animSteps = 1;
+
+    // Face toward the human opponent when available.
+    if (Fighter* opponent = GetOpponent(*this)) {
+        facingDirection = (opponent->GetPosition().x >= position.x) ? 1 : -1;
+    }
+
+    if (currentState == INTRO) {
+        maxFrame = GetMaxFrameForState(INTRO);
+        if (maxFrame < 1) {
+            FinishSandbagRecover();
+            return;
+        }
+        if (introDisplayHold > 0) {
+            currentFrame = introLastFrame;
+            introDisplayHold -= animSteps;
+            if (introDisplayHold <= 0) {
+                introDisplayHold = 0;
+                currentState = STANCE;
+                currentFrame = 0;
+                animAccumulator = 0;
+                idleWaitFrames = 0;
+                maxFrame = GetMaxFrameForState(STANCE);
+            }
+            UpdateScaledHurtbox();
+            return;
+        }
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_INTRO_TICKS, maxFrame)) {
+            introLastFrame = (maxFrame > 0) ? (maxFrame - 1) : 0;
+            currentFrame = introLastFrame;
+            introDisplayHold = INTRO_END_HOLD_FRAMES;
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    if (currentState == DAMAGE || isHit) {
+        if (currentState != DAMAGE) {
+            BeginSandbagHitReaction();
+        }
+
+        maxFrame = GetMaxFrameForState(DAMAGE);
+        if (maxFrame < 1) maxFrame = 1;
+
+        if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            damageGroundHold += steps;
+            if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
+                BeginSandbagRecover();
+            }
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    if (currentState == RECOVER) {
+        maxFrame = GetMaxFrameForState(RECOVER);
+        if (!makotoRecover.texture || maxFrame < 1) {
+            FinishSandbagRecover();
+            return;
+        }
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_RECOVER_ANIM_TICKS, maxFrame)) {
+            FinishSandbagRecover();
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    // Keep sandbag snapped to spawn between reactions.
+    position = originalPosition;
+
+    if (currentState == IDLE) {
+        maxFrame = GetMaxFrameForState(IDLE);
+        if (maxFrame < 1 || !makotoIdle.texture) {
+            currentState = STANCE;
+            currentFrame = 0;
+            animAccumulator = 0;
+            idleWaitFrames = 0;
+            maxFrame = GetMaxFrameForState(STANCE);
+            UpdateScaledHurtbox();
+            return;
+        }
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_IDLE_PLAY_TICKS, maxFrame)) {
+            currentState = STANCE;
+            currentFrame = 0;
+            animAccumulator = 0;
+            idleWaitFrames = 0;
+            maxFrame = GetMaxFrameForState(STANCE);
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    currentState = STANCE;
+    maxFrame = GetMaxFrameForState(STANCE);
+    if (maxFrame < 1) maxFrame = 1;
+    AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, MAKOTO_LOOP_TICKS_SLOW, maxFrame);
+
+    idleWaitFrames += steps;
+    if (idleWaitFrames >= IDLE_THRESHOLD_FRAMES) {
+        idleWaitFrames = 0;
+        currentState = IDLE;
+        currentFrame = 0;
+        animAccumulator = 0;
+        maxFrame = GetMaxFrameForState(IDLE);
+    }
+    UpdateScaledHurtbox();
+}
+
 void Makoto::TakeDamage(int damage) {
     if (isDead) return;
+
+    if (!IsHumanControlled()) {
+        health -= damage;
+        if (health < 0) health = 0;
+        if (currentState != DAMAGE && currentState != RECOVER) {
+            BeginSandbagHitReaction();
+        }
+        if (!TRAINING_MODE && health <= 0) {
+            isDead = true;
+        }
+        return;
+    }
+
     health -= damage;
     isHit = true;
     hitStunTimer = 20;
@@ -1477,11 +1690,11 @@ void Makoto::TakeDamage(int damage) {
 }
 
 void Makoto::Reset() {
-    float spawnX = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + MAKOTO_SPAWN_FORWARD;
-    position = D3DXVECTOR3(spawnX, CHARACTER_GROUND_Y, 0);
-    facingDirection = 1;
+    ApplySlotSpawnDefaults();
+    originalPosition = position;
     health = maxHealth;
     sp = maxSp;
+    RefillStamina();
     isDead = false;
     isHit = false;
     hitStunTimer = 0;
@@ -1502,13 +1715,15 @@ void Makoto::Reset() {
     thanatosSlashAnimationComplete = false;
     messiahAnimationComplete = false; megidolaonAnimationComplete = false;
     hitAGI = false; hitMabufu = false; hitMaziodyne = false; hitSlash = false; hitMegidolaon = false;
-    hitThisAttack = false; dashHasHit = false;
+    hitThisAttack = false; dashHasHit = false; attackButtonHeld = false;
     spaceChordBuffer = 0; spaceWasDown = false; messiahChordConsumed = false;
     slashAnimTimer = 0;
     slashTotalFrames = 0;
     animAccumulator = 0;
     personaAnimAccumulator = 0;
     noInputFrames = 0;
+    idleWaitFrames = 0;
+    damageGroundHold = 0;
     introDisplayHold = 0;
     introLastFrame = 0;
     stanceEntryDelay = 0;
@@ -1598,7 +1813,7 @@ bool LoadMakotoTextures() {
         { &makotoUpAir, "assets/makoto/up_air.png", 7 },
         { &makotoSideAir, "assets/makoto/side_air.png", 6 },
         { &makotoDownAir, "assets/makoto/down_air.png", 8 },
-        { &makotoIntro, "assets/makoto/intro.png", 8 },
+        { &makotoIntro, "assets/makoto/intro.png", 7 },
         { &makotoTaunt, "assets/makoto/taunt.png", 8 },
         { &makotoDamage, "assets/makoto/damage.png", 3 },
         { &makotoRecover, "assets/makoto/recover.png", 4 },

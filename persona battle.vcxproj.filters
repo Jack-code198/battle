@@ -42,10 +42,16 @@
     <ClCompile Include="player\joker\Joker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="player\narukami\Narukami.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stageSelect.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="playerSelect.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="menuMain.cpp">
@@ -83,10 +89,16 @@
     <ClInclude Include="player\joker\Joker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="player\narukami\Narukami.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ui.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stageSelect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="playerSelect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="menuMain.h">

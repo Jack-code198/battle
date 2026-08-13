@@ -5,6 +5,8 @@
 
 bool LoadMenuTextures();
 void CleanUpMenuTextures();
+void NotifyMenuDeviceLost();
+void NotifyMenuDeviceReset();
 void drawMenuOptions();
 void renderMainMenu();
 

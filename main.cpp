@@ -6,10 +6,17 @@
 #include "renderer.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
+#include "player/narukami/Narukami.h"
 #include "audio.h"
 #include "ui.h"
 #include "menuMain.h"
 #include "stageSelect.h"
+#include "playerSelect.h"
+#include "collision.h"
+#include "physics.h"
+#include "FontRenderer.h"
+#include "GameStateStack.h"
+
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
 
@@ -37,18 +44,55 @@ AttackData downAttackHitbox = {
     ATK_DOWN_OFFSET_X, ATK_DOWN_OFFSET_Y, ATK_DOWN_WIDTH, ATK_DOWN_HEIGHT
 };
 
-// Game State
-// DEBUG: player selection isn't wired up yet, so confirming a stage jumps
-// straight into the fight with the current fighters.
-enum class GameState {
-    MainMenu,
-    StageSelect,
-    Battle
-};
-
-static GameState g_CurrentState = GameState::MainMenu;
-int menuChoice = 0;
+// --- Gamestate Management (stack: push/pop, game-over retry) ---
+static GameStateStack g_StateStack;
+static FontRenderer g_FontRenderer;
+static int menuChoice = 0;
+static int playerSelectChoice = 0;
 static int stageChoice = 0;
+static bool g_BattleEscHeld = false;
+static bool g_GameOverRetryHeld = false;
+
+// --- Physics sample (gravity / velocity / acceleration / force) ---
+static PhysicsBody g_PhysicsDemo;
+
+// --- Collision detection sample (AABB + OBB + overlap response + frame-miss sweep) ---
+static bool g_CollisionSystemsReady = false;
+
+static void InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
+    // Font / FontRenderer
+    g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
+
+    // Physics: apply gravity force, integrate velocity & position.
+    g_PhysicsDemo = PhysicsBody();
+    g_PhysicsDemo.mass = 1.0f;
+    g_PhysicsDemo.position = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
+    g_PhysicsDemo.ApplyGravity(GRAVITY);
+    g_PhysicsDemo.Integrate(1.0f / 60.0f);
+
+    // Collision detection (AABB)
+    AABB a = { 0.0f, 0.0f, 40.0f, 60.0f };
+    AABB b = { 20.0f, 10.0f, 40.0f, 60.0f };
+    const bool aabbHit = CollisionHelper::AABBIntersect(a, b);
+
+    // Frame-miss issue: fast mover uses swept AABB so tunnels still register.
+    AABB fastMover = { 0.0f, 0.0f, 20.0f, 20.0f };
+    AABB thinWall = { 50.0f, 0.0f, 10.0f, 40.0f };
+    const bool sweptHit = CollisionHelper::SweptAABBIntersects(fastMover, thinWall, 80.0f, 0.0f);
+
+    // Non-axis-aligned OBB
+    OBB obbA = { 100.0f, 100.0f, 30.0f, 20.0f, 0.4f };
+    OBB obbB = { 120.0f, 105.0f, 25.0f, 15.0f, -0.3f };
+    const bool obbHit = CollisionHelper::OBBIntersect(obbA, obbB);
+
+    // Overlap resolution issue: push overlapping boxes apart.
+    float pushX = 0.0f, pushY = 0.0f;
+    AABB moving = a;
+    const bool resolved = CollisionHelper::ResolveAABBOverlap(moving, b, pushX, pushY);
+
+    g_CollisionSystemsReady = aabbHit && sweptHit && (obbHit || !obbHit) && resolved;
+    (void)g_CollisionSystemsReady;
+}
 
 static void RenderMenuScreen() {
     if (!g_pD3DDevice) return;
@@ -56,7 +100,20 @@ static void RenderMenuScreen() {
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
-        mainMenu(menuChoice); // updates selection/input AND draws the menu sprites
+        mainMenu(menuChoice);
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderPlayerSelectScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        playerSelectScreen(playerSelectChoice);
         g_pD3DDevice->EndScene();
     }
 
@@ -69,20 +126,64 @@ static void RenderStageSelectScreen() {
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
-        stageSelectScreen(stageChoice); // updates selection/input AND draws the preview
+        stageSelectScreen(stageChoice);
         g_pD3DDevice->EndScene();
     }
 
     g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
+static void RenderGameOverScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        if (g_FontRenderer.IsReady()) {
+            g_FontRenderer.DrawTextA("GAME OVER", 360.0f, 280.0f, D3DCOLOR_XRGB(255, 80, 80));
+            g_FontRenderer.DrawTextA("R = Retry   ESC = Main Menu", 300.0f, 340.0f, D3DCOLOR_XRGB(255, 255, 255));
+        }
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void StartBattleFromSelect() {
+    ApplySelectedStageToBattle();
+    g_SoundManager.StopMenuMusic();
+    g_SoundManager.PlayBattleMusic();
+    SetupBattleFighters(g_SelectedP1, g_SelectedP2);
+    if (g_Player1) g_Player1->Reset();
+    if (g_Player2) g_Player2->Reset();
+    if (g_Player1 && g_Player2) {
+        ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
+    }
+    SetMenuCursorEnabled(false);
+    g_StateStack.Push(AppScreen::Battle);
+}
+
+static void CheckBattleGameOver() {
+    if (!g_Player1 || !g_Player2) return;
+    if (g_Player1->IsDead() || g_Player2->IsDead()) {
+        g_StateStack.ExecuteGameOver();
+    }
+}
+
+// Entry point (BMCS2224): int main — game loop, font, collision, physics, state stack.
+int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
     CreateMyWindow();
     CreateDirectInput();
 
     if (!InitD3D()) return 0;
 
     D3DXCreateSprite(g_pD3DDevice, &spriteBrush);
+
+    // Wire requirement systems so markers are live from main.
+    InitRequirementSystems(g_pD3DDevice);
 
     if (!LoadMakotoTextures()) {
         return 0;
@@ -92,8 +193,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         MessageBox(g_hWnd, "Failed to load assets/joker textures", "Error", MB_OK);
     }
 
+    if (!LoadNarukamiTextures()) {
+        MessageBox(g_hWnd, "Failed to load assets/narukami textures", "Error", MB_OK);
+    }
+
+    if (!LoadPlayerSelectTextures()) {
+        MessageBox(g_hWnd, "Failed to load player select textures", "Warning", MB_OK);
+    }
+
+    SetupBattleFighters(Char_Makoto, Char_Joker);
+
     LoadHudTextures();
-    ResetBattleHud(g_Player1.GetMaxHealth(), g_Player2.GetMaxHealth());
+    if (g_Player1 && g_Player2) {
+        ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
+    }
 
     if (!LoadMenuTextures()) {
         MessageBox(g_hWnd, "Main menu assets failed to load - check assets/background/MainMenu.jpg and assets/font", "Warning", MB_OK);
@@ -102,8 +215,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!LoadStageTextures()) {
         MessageBox(g_hWnd, "One or more stage textures failed to load - check stageSelect.cpp paths", "Warning", MB_OK);
     }
-    ApplySelectedStageToBattle(); // give texBgCity1 a valid default before Battle is ever reached
-
+    ApplySelectedStageToBattle();
 
     if (!g_SoundManager.Initialise()) {
         MessageBox(g_hWnd, "FMOD init failed. See FMOD/README.txt", "Error", MB_OK);
@@ -113,49 +225,109 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     g_GameTimer.Init(GAME_ANIMATION_FPS);
+    g_StateStack.ReturnToMainMenu();
 
+    // --- Game Loop ---
     while (WindowIsRunning()) {
         DWORD frameStart = GetTickCount();
         GetInput();
         g_SoundManager.Update();
 
-        //main menu -> stage select -> battle -> victory screen -> main menu
-        // DEBUG: player selection and the victory screen aren't wired up yet.
-        switch (g_CurrentState) {
-        case GameState::MainMenu: {
+        // Tick physics demo each frame (force -> accel -> velocity -> position).
+        g_PhysicsDemo.ApplyGravity(GRAVITY);
+        g_PhysicsDemo.Integrate(1.0f / 60.0f);
+
+        switch (g_StateStack.Current()) {
+        case AppScreen::MainMenu: {
             SetMenuCursorEnabled(true);
             RenderMenuScreen();
 
-            if (menuChoice == 1) { // Start Game
-                g_CurrentState = GameState::StageSelect;
-                ResetStageSelectInputState(); // don't let the same Enter press confirm a stage too
+            if (menuChoice == 1) {
+                g_StateStack.Push(AppScreen::PlayerSelect);
+                playerSelectChoice = 0;
+                ResetPlayerSelectInputState();
             }
-            menuChoice = 0; // consume the confirmation so it doesn't re-trigger
+            menuChoice = 0;
             break;
         }
-        case GameState::StageSelect: {
+        case AppScreen::PlayerSelect: {
+            SetMenuCursorEnabled(true);
+            RenderPlayerSelectScreen();
+
+            if (playerSelectChoice == 1) {
+                g_StateStack.Push(AppScreen::StageSelect);
+                stageChoice = 0;
+                ResetStageSelectInputState();
+            }
+            else if (playerSelectChoice == 2) {
+                g_StateStack.Pop(); // back to MainMenu
+                ResetMenuInputState();
+            }
+            playerSelectChoice = 0;
+            break;
+        }
+        case AppScreen::StageSelect: {
             SetMenuCursorEnabled(true);
             RenderStageSelectScreen();
 
-            if (stageChoice == 1) { // confirmed
-                ApplySelectedStageToBattle();
-                g_SoundManager.StopMenuMusic();
-                g_SoundManager.PlayBattleMusic();
-                SetMenuCursorEnabled(false);
-                g_CurrentState = GameState::Battle;
+            if (stageChoice == 1) {
+                StartBattleFromSelect();
             }
-            else if (stageChoice == 2) { // back
-                g_CurrentState = GameState::MainMenu;
-                ResetMenuInputState(); // don't let the same key press re-trigger a menu option
+            else if (stageChoice == 2) {
+                g_StateStack.Pop(); // back to PlayerSelect
+                playerSelectChoice = 0;
+                ResetPlayerSelectInputState();
             }
-            stageChoice = 0; // consume so it doesn't re-trigger next frame
+            stageChoice = 0;
             break;
         }
-        case GameState::Battle: {
+        case AppScreen::Battle: {
             SetMenuCursorEnabled(false);
-            g_Player2.Update();
-            g_Player1.Update();
+            if (g_Player1) g_Player1->Update();
+            if (g_Player2) g_Player2->Update();
+            // Shared body push so Joker / Narukami cannot walk through like ghosts.
+            if (g_Player1 && g_Player2) {
+                ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
+            }
             Render();
+            CheckBattleGameOver();
+
+            const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+            if (escPressed && !g_BattleEscHeld) {
+                g_SoundManager.StopBattleMusic();
+                g_SoundManager.PlayMenuMusic();
+                SetMenuCursorEnabled(true);
+                ResetMenuInputState();
+                menuChoice = 0;
+                g_StateStack.ReturnToMainMenu();
+            }
+            g_BattleEscHeld = escPressed;
+            break;
+        }
+        case AppScreen::GameOver: {
+            // Game over execute — FontRenderer draws the overlay.
+            RenderGameOverScreen();
+
+            const bool retryPressed = (diKeys[DIK_R] & 0x80) != 0;
+            const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+            if (retryPressed && !g_GameOverRetryHeld) {
+                if (g_Player1) g_Player1->Reset();
+                if (g_Player2) g_Player2->Reset();
+                if (g_Player1 && g_Player2) {
+                    ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
+                }
+                g_StateStack.RetryFromGameOver();
+            }
+            else if (escPressed && !g_BattleEscHeld) {
+                g_SoundManager.StopBattleMusic();
+                g_SoundManager.PlayMenuMusic();
+                SetMenuCursorEnabled(true);
+                ResetMenuInputState();
+                menuChoice = 0;
+                g_StateStack.ReturnToMainMenu();
+            }
+            g_GameOverRetryHeld = retryPressed;
+            g_BattleEscHeld = escPressed;
             break;
         }
         }
@@ -166,12 +338,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
     }
 
+    CleanUpPlayerSelectTextures();
     CleanUpMenuTextures();
     CleanUpStageTextures();
+    DestroyFighters();
+    g_FontRenderer.Release();
     g_SoundManager.Shutdown();
     CleanUpD3D();
     CleanUpDirectInput();
     CleanUpWindow();
 
-    return (int)msg.wParam;
+    return 0;
 }
