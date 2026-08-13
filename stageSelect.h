@@ -16,6 +16,8 @@ extern int g_SelectedStageIndex;
 
 bool LoadStageTextures();
 void CleanUpStageTextures();
+void NotifyStageDeviceLost();
+void NotifyStageDeviceReset();
 
 // choice: 0 = still browsing, 1 = stage confirmed (Enter), 2 = go back (Esc/Backspace)
 void stageSelectScreen(int& choice);

@@ -1,16 +1,20 @@
 #include "ui.h"
 #include "renderer.h"
+#include "game_logic.h"
+#include "player/CharacterId.h"
 #include <algorithm>
 
 static LPDIRECT3DTEXTURE9 g_MakotoIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_JokerIconTex = nullptr;
+static LPDIRECT3DTEXTURE9 g_NarukamiIconTex = nullptr;
 static ID3DXFont* g_HudFont = nullptr;
 static bool g_HudFontLoaded = false;
 static const char* g_LoadedHudFontPath = nullptr;
 
 struct HudHealthTracker {
-    float displayHealth = 0.0f;
-    int syncedHealth = -1;
+    float displayHealth = 0.0f; // delayed chip visual (Tekken-style)
+    int syncedHealth = -1;      // last known actual HP
+    int chipHoldFrames = 0;     // wait after hit before chip drains
 };
 
 static HudHealthTracker g_P1HealthTrack;
@@ -19,7 +23,8 @@ static HudHealthTracker g_P2HealthTrack;
 enum HudIconColorKey {
     HUD_ICON_NO_COLORKEY = 0,
     HUD_ICON_PERSONA_BLUE,
-    HUD_ICON_JOKER_RED
+    HUD_ICON_JOKER_RED,
+    HUD_ICON_NARUKAMI_YELLOW
 };
 
 static bool LoadHudFont() {
@@ -36,14 +41,14 @@ static bool LoadHudFont() {
     auto tryCreateFont = [](const char* familyName) -> HRESULT {
         return D3DXCreateFontA(
             g_pD3DDevice,
-            28,
+            20,
             0,
             FW_BOLD,
             1,
             FALSE,
             DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY,
+            OUT_TT_PRECIS,
+            ANTIALIASED_QUALITY,
             DEFAULT_PITCH | FF_DONTCARE,
             familyName,
             &g_HudFont);
@@ -90,6 +95,9 @@ static bool LoadHudIconTexture(const char* path, LPDIRECT3DTEXTURE9* outTex, Hud
     else if (colorKey == HUD_ICON_JOKER_RED) {
         keyColor = D3DCOLOR_XRGB(JOKER_COLORKEY_R, JOKER_COLORKEY_G, JOKER_COLORKEY_B);
     }
+    else if (colorKey == HUD_ICON_NARUKAMI_YELLOW) {
+        keyColor = D3DCOLOR_XRGB(NARUKAMI_COLORKEY_R, NARUKAMI_COLORKEY_G, NARUKAMI_COLORKEY_B);
+    }
 
     HRESULT hr = D3DXCreateTextureFromFileEx(
         g_pD3DDevice,
@@ -116,6 +124,9 @@ static bool LoadHudIconTexture(const char* path, LPDIRECT3DTEXTURE9* outTex, Hud
     }
     else if (colorKey == HUD_ICON_JOKER_RED) {
         ApplyJokerColorKey(*outTex);
+    }
+    else if (colorKey == HUD_ICON_NARUKAMI_YELLOW) {
+        ApplyNarukamiColorKey(*outTex);
     }
 
     return true;
@@ -145,35 +156,52 @@ static void DrawHudIcon(LPD3DXSPRITE sprite, LPDIRECT3DTEXTURE9 tex, float x, fl
     sprite->SetTransform(&matIdentity);
 }
 
-static float GetHudHealthDrainRate(int maxHealth) {
-    return (float)maxHealth / 150.0f;
+static float GetHudHealthChipDrainRate(int maxHealth) {
+    if (HUD_HP_CHIP_DRAIN_FRAMES <= 0) return (float)maxHealth;
+    return (float)maxHealth / (float)HUD_HP_CHIP_DRAIN_FRAMES;
 }
 
+// Tekken-style chip: damage peels the live bar immediately, white chip holds,
+// then drains only after a quiet period with no new hits.
 static void UpdateHudHealthTracker(HudHealthTracker& tracker, int health, int maxHealth) {
     if (maxHealth <= 0) return;
 
     if (tracker.syncedHealth < 0) {
         tracker.displayHealth = (float)health;
         tracker.syncedHealth = health;
+        tracker.chipHoldFrames = 0;
         return;
     }
 
     if (health > tracker.syncedHealth) {
+        // Heal / reset: snap both layers.
         tracker.displayHealth = (float)health;
+        tracker.chipHoldFrames = 0;
     }
     else if (health < tracker.syncedHealth) {
+        // New damage: keep chip at previous display (accumulate), restart hold.
         if (tracker.displayHealth < (float)tracker.syncedHealth) {
             tracker.displayHealth = (float)tracker.syncedHealth;
         }
+        tracker.chipHoldFrames = HUD_HP_CHIP_HOLD_FRAMES;
     }
 
     tracker.syncedHealth = health;
 
-    if (tracker.displayHealth > (float)health) {
-        tracker.displayHealth -= GetHudHealthDrainRate(maxHealth);
-        if (tracker.displayHealth < (float)health) {
-            tracker.displayHealth = (float)health;
-        }
+    if (tracker.displayHealth <= (float)health) {
+        tracker.displayHealth = (float)health;
+        tracker.chipHoldFrames = 0;
+        return;
+    }
+
+    if (tracker.chipHoldFrames > 0) {
+        tracker.chipHoldFrames--;
+        return;
+    }
+
+    tracker.displayHealth -= GetHudHealthChipDrainRate(maxHealth);
+    if (tracker.displayHealth < (float)health) {
+        tracker.displayHealth = (float)health;
     }
 }
 
@@ -202,6 +230,47 @@ static void DrawMeterBar(
 
     float fillX = anchorRight ? (x + width - fillWidth) : x;
     DrawDebugRect(sprite, fillX, y, fillWidth, height, fillColor);
+}
+
+// 3 discrete stamina pips under SP (supports fractional fill on the active pip).
+static void DrawStaminaSegments(
+    LPD3DXSPRITE sprite,
+    float x,
+    float y,
+    float width,
+    float height,
+    float stamina,
+    float maxStamina,
+    bool anchorRight,
+    D3DCOLOR fillColor)
+{
+    if (!sprite || maxStamina <= 0.0f) return;
+
+    const int segments = (int)(maxStamina + 0.5f);
+    if (segments <= 0) return;
+
+    const float gap = HUD_STAMINA_SEGMENT_GAP;
+    const float segW = (width - gap * (segments - 1)) / (float)segments;
+    float remaining = stamina;
+    if (remaining < 0.0f) remaining = 0.0f;
+    if (remaining > maxStamina) remaining = maxStamina;
+
+    for (int i = 0; i < segments; ++i) {
+        const int visualIndex = anchorRight ? (segments - 1 - i) : i;
+        const float segX = x + (float)visualIndex * (segW + gap);
+        DrawDebugRect(sprite, segX - 1.0f, y - 1.0f, segW + 2.0f, height + 2.0f, D3DCOLOR_ARGB(200, 255, 255, 255));
+        DrawDebugRect(sprite, segX, y, segW, height, D3DCOLOR_ARGB(230, 16, 16, 20));
+
+        float fill = remaining;
+        if (fill > 1.0f) fill = 1.0f;
+        if (fill < 0.0f) fill = 0.0f;
+        if (fill > 0.0f) {
+            const float fillW = segW * fill;
+            const float fillX = anchorRight ? (segX + segW - fillW) : segX;
+            DrawDebugRect(sprite, fillX, y, fillW, height, fillColor);
+        }
+        remaining -= 1.0f;
+    }
 }
 
 static void DrawStreetFighterHealthBar(
@@ -248,11 +317,21 @@ static void DrawStreetFighterHealthBar(
     }
 }
 
+static LPDIRECT3DTEXTURE9 GetHudIconForCharacter(CharacterId id) {
+    switch (id) {
+    case Char_Joker: return g_JokerIconTex;
+    case Char_Narukami: return g_NarukamiIconTex;
+    case Char_Makoto:
+    default: return g_MakotoIconTex;
+    }
+}
+
 bool LoadHudTextures() {
     LoadHudFont();
     bool makotoOk = LoadHudIconTexture("assets/makoto/makoto_icon.png", &g_MakotoIconTex, HUD_ICON_PERSONA_BLUE);
     bool jokerOk = LoadHudIconTexture("assets/joker/joker_icon.png", &g_JokerIconTex, HUD_ICON_JOKER_RED);
-    return makotoOk || jokerOk;
+    bool narukamiOk = LoadHudIconTexture("assets/narukami/narukami_icon.png", &g_NarukamiIconTex, HUD_ICON_NARUKAMI_YELLOW);
+    return makotoOk || jokerOk || narukamiOk;
 }
 
 void CleanUpHudTextures() {
@@ -273,19 +352,36 @@ void CleanUpHudTextures() {
         g_JokerIconTex->Release();
         g_JokerIconTex = nullptr;
     }
+    if (g_NarukamiIconTex) {
+        g_NarukamiIconTex->Release();
+        g_NarukamiIconTex = nullptr;
+    }
+}
+
+void NotifyHudDeviceLost() {
+    if (g_HudFont) g_HudFont->OnLostDevice();
+}
+
+void NotifyHudDeviceReset() {
+    if (g_HudFont) g_HudFont->OnResetDevice();
 }
 
 void ResetBattleHud(int p1MaxHealth, int p2MaxHealth) {
     g_P1HealthTrack.displayHealth = (float)p1MaxHealth;
     g_P1HealthTrack.syncedHealth = p1MaxHealth;
+    g_P1HealthTrack.chipHoldFrames = 0;
     g_P2HealthTrack.displayHealth = (float)p2MaxHealth;
     g_P2HealthTrack.syncedHealth = p2MaxHealth;
+    g_P2HealthTrack.chipHoldFrames = 0;
 }
 
 void SyncBattleHudHealth(int playerSlot, int health, int maxHealth) {
+    (void)maxHealth;
     HudHealthTracker& tracker = (playerSlot == 1) ? g_P1HealthTrack : g_P2HealthTrack;
+    // Training heal / hard sync: snap chip so it does not keep old damage.
     tracker.displayHealth = (float)health;
     tracker.syncedHealth = health;
+    tracker.chipHoldFrames = 0;
 }
 
 void DrawBattleHud(
@@ -294,10 +390,14 @@ void DrawBattleHud(
     int p1MaxHealth,
     int p1Sp,
     int p1MaxSp,
+    float p1Stamina,
+    float p1MaxStamina,
     int p2Health,
     int p2MaxHealth,
     int p2Sp,
-    int p2MaxSp)
+    int p2MaxSp,
+    float p2Stamina,
+    float p2MaxStamina)
 {
     if (!sprite) return;
 
@@ -305,6 +405,7 @@ void DrawBattleHud(
     UpdateHudHealthTracker(g_P2HealthTrack, p2Health, p2MaxHealth);
 
     const D3DCOLOR spColor = D3DCOLOR_ARGB(255, HUD_SP_R, HUD_SP_G, HUD_SP_B);
+    const D3DCOLOR staminaColor = D3DCOLOR_ARGB(255, HUD_STAMINA_R, HUD_STAMINA_G, HUD_STAMINA_B);
     const D3DCOLOR nameShadow = D3DCOLOR_ARGB(255, 0, 0, 0);
     const D3DCOLOR nameColor = D3DCOLOR_ARGB(255, 255, 255, 255);
 
@@ -312,7 +413,8 @@ void DrawBattleHud(
     const float barWidth = HUD_BAR_WIDTH;
     const float barGap = HUD_BAR_GAP;
     const float iconBarGap = HUD_ICON_BAR_GAP;
-    const float totalBarStackHeight = HUD_HP_BAR_HEIGHT + HUD_SP_BAR_HEIGHT + barGap;
+    const float totalBarStackHeight =
+        HUD_HP_BAR_HEIGHT + HUD_SP_BAR_HEIGHT + HUD_STAMINA_BAR_HEIGHT + barGap * 2.0f;
 
     const float p1IconX = HUD_EDGE_MARGIN;
     const float p1BarX = p1IconX + iconSize + iconBarGap;
@@ -327,25 +429,41 @@ void DrawBattleHud(
     const float p2NameEdgeX = p2BarX + barWidth;
     const float nameY = p1BarY + HUD_NAME_OFFSET_Y;
 
+    const CharacterId p1Id = g_Player1 ? g_Player1->GetCharacterId() : Char_Makoto;
+    const CharacterId p2Id = g_Player2 ? g_Player2->GetCharacterId() : Char_Joker;
+    const char* p1Name = g_Player1 ? g_Player1->GetDisplayName() : GetCharacterDisplayName(p1Id);
+    const char* p2Name = g_Player2 ? g_Player2->GetDisplayName() : GetCharacterDisplayName(p2Id);
+    LPDIRECT3DTEXTURE9 p1Icon = GetHudIconForCharacter(p1Id);
+    LPDIRECT3DTEXTURE9 p2Icon = GetHudIconForCharacter(p2Id);
+
     sprite->Begin(D3DXSPRITE_ALPHABLEND);
-    DrawHudIcon(sprite, g_MakotoIconTex, p1IconX, iconY, iconSize);
-    DrawHudIcon(sprite, g_JokerIconTex, p2IconX, iconY, iconSize);
+    DrawHudIcon(sprite, p1Icon, p1IconX, iconY, iconSize);
+    DrawHudIcon(sprite, p2Icon, p2IconX, iconY, iconSize);
     sprite->End();
+
+    const float p1SpY = p1BarY + HUD_HP_BAR_HEIGHT + barGap;
+    const float p1StaminaY = p1SpY + HUD_SP_BAR_HEIGHT + barGap;
+    const float p2SpY = p2BarY + HUD_HP_BAR_HEIGHT + barGap;
+    const float p2StaminaY = p2SpY + HUD_SP_BAR_HEIGHT + barGap;
 
     DrawStreetFighterHealthBar(
         sprite, p1BarX, p1BarY, barWidth, HUD_HP_BAR_HEIGHT,
         p1Health, g_P1HealthTrack.displayHealth, p1MaxHealth, false);
-    DrawMeterBar(sprite, p1BarX, p1BarY + HUD_HP_BAR_HEIGHT + barGap, barWidth, HUD_SP_BAR_HEIGHT,
+    DrawMeterBar(sprite, p1BarX, p1SpY, barWidth, HUD_SP_BAR_HEIGHT,
         p1Sp, p1MaxSp, false, spColor);
+    DrawStaminaSegments(sprite, p1BarX, p1StaminaY, barWidth, HUD_STAMINA_BAR_HEIGHT,
+        p1Stamina, p1MaxStamina, false, staminaColor);
 
     DrawStreetFighterHealthBar(
         sprite, p2BarX, p2BarY, barWidth, HUD_HP_BAR_HEIGHT,
         p2Health, g_P2HealthTrack.displayHealth, p2MaxHealth, true);
-    DrawMeterBar(sprite, p2BarX, p2BarY + HUD_HP_BAR_HEIGHT + barGap, barWidth, HUD_SP_BAR_HEIGHT,
+    DrawMeterBar(sprite, p2BarX, p2SpY, barWidth, HUD_SP_BAR_HEIGHT,
         p2Sp, p2MaxSp, true, spColor);
+    DrawStaminaSegments(sprite, p2BarX, p2StaminaY, barWidth, HUD_STAMINA_BAR_HEIGHT,
+        p2Stamina, p2MaxStamina, true, staminaColor);
 
-    DrawHudText("MAKOTO", p1NameX + 1.0f, nameY + 1.0f, nameShadow, false, 0.0f);
-    DrawHudText("MAKOTO", p1NameX, nameY, nameColor, false, 0.0f);
-    DrawHudText("JOKER", 0.0f, nameY + 1.0f, nameShadow, true, p2NameEdgeX + 1.0f);
-    DrawHudText("JOKER", 0.0f, nameY, nameColor, true, p2NameEdgeX);
+    DrawHudText(p1Name, p1NameX + 1.0f, nameY + 1.0f, nameShadow, false, 0.0f);
+    DrawHudText(p1Name, p1NameX, nameY, nameColor, false, 0.0f);
+    DrawHudText(p2Name, 0.0f, nameY + 1.0f, nameShadow, true, p2NameEdgeX + 1.0f);
+    DrawHudText(p2Name, 0.0f, nameY, nameColor, true, p2NameEdgeX);
 }

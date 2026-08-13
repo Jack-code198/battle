@@ -27,6 +27,8 @@ inline constexpr float CHARACTER_REFERENCE_HEIGHT = 64.0f;
 inline constexpr float CHARACTER_REFERENCE_WIDTH = 48.0f;
 inline constexpr float MAKOTO_BODY_HEIGHT = 56.0f;
 inline constexpr float MAKOTO_FEET_Y = 56.0f;
+// Shared sole row for crouch hold + crouch attack (measured from sheets).
+inline constexpr float MAKOTO_CROUCH_FEET_Y = 42.0f;
 inline constexpr float MAKOTO_BODY_WIDTH = 22.0f;
 inline constexpr float MAKOTO_BODY_CENTER_X = 11.0f;
 inline constexpr float MAKOTO_WINDOW_MARGIN = 12.0f;
@@ -61,6 +63,15 @@ inline constexpr float OPPONENT_RETURN_SPEED = 8.0f;
 inline constexpr int OPPONENT_STAND_ANIM_TICKS = 8;
 inline constexpr int OPPONENT_WALK_ANIM_TICKS = 6;
 inline constexpr int OPPONENT_DAMAGE_ANIM_TICKS = 5;
+inline constexpr int JOKER_INTRO_TICKS = 6;
+inline constexpr int JOKER_IDLE_ANIM_TICKS = 8;
+// Recover only has 3 frames — give each frame enough time to read.
+inline constexpr int JOKER_RECOVER_ANIM_TICKS = 10;
+// Damage / knockdown timing (snappier hit + get-up).
+inline constexpr int JOKER_DAMAGE_ANIM_TICKS = 4;
+inline constexpr int JOKER_DAMAGE_GROUND_HOLD_TICKS = 16;
+// Same wait idea as Makoto before leaving stance for idle (~10s at 60fps).
+inline constexpr int JOKER_IDLE_WAIT_FRAMES = 600;
 
 inline constexpr float JOKER_BODY_WIDTH = 22.0f;
 inline constexpr float JOKER_HURTBOX_WIDTH = 26.0f;
@@ -75,7 +86,10 @@ inline constexpr float DEFAULT_HURTBOX_HEIGHT = 110.0f;
 
 // Movement speeds (pixels per logic step before facing direction).
 inline constexpr int MAKOTO_MOVE_SPEED = 6;
-inline constexpr int JOKER_MOVE_SPEED = 4;
+inline constexpr int NARUKAMI_MOVE_SPEED = 6;
+inline constexpr float NARUKAMI_PUSHBOX_WIDTH = 22.0f;
+inline constexpr float NARUKAMI_PUSHBOX_HEIGHT = 52.0f;
+inline constexpr int JOKER_MOVE_SPEED = 6;
 inline constexpr float MAKOTO_DASH_SPEED_MULTIPLIER = 3.5f;
 
 // Joker vertical clamp (keeps sandbag opponent near the battle ground band).
@@ -92,6 +106,8 @@ inline constexpr float DASH_HITBOX_FORWARD = 10.0f;
 inline constexpr float DASH_HITBOX_UP = 50.0f;
 inline constexpr int DASH_HIT_DAMAGE = 28;
 
+// Legacy compile-time flag. Prefer Fighter::IsHumanControlled() — sandbag is per-instance
+// (P2 sandbag by default; any fighter can be sandbag when humanControlled is false).
 inline constexpr bool JOKER_SANDBAG_MODE = true;
 inline constexpr bool OPPONENT_SANDBAG_MODE = JOKER_SANDBAG_MODE;
 inline constexpr bool TRAINING_MODE = true;
@@ -106,20 +122,50 @@ inline constexpr float ARSENE_BODY_HEIGHT = 56.0f;
 inline constexpr float ARSENE_FEET_Y = 56.0f;
 inline constexpr float ARSENE_BEHIND_HORIZONTAL = 95.0f;
 inline constexpr float ARSENE_BEHIND_VERTICAL = 125.0f;
+// Mona art sits high in the cell (~y 2-37); feet must match bottom so she stands on ground.
+inline constexpr float MONA_TAUNT_OFFSET_X = 100.0f;
+inline constexpr float MONA_TAUNT_FEET_Y = 38.0f;
+inline constexpr int MONA_TAUNT_FRAME_COUNT = 10;
 inline constexpr float AGI_EFFECT_SCALE = 1.0f;
 inline constexpr float MABUFU_EFFECT_SCALE = 1.0f;
 inline constexpr float THANATOS_SLASH_EFFECT_SCALE = 1.0f;
 inline constexpr float PERSONA_EFFECT_SCALE = 4.5f;
+// Narukami Izanagi matches Arsene (1.0 body scale), not Makoto's 4.5 personas.
+inline constexpr float NARUKAMI_IZANAGI_SCALE = 1.0f;
+inline constexpr float NARUKAMI_STANCE_FEET_Y = 52.0f;
+inline constexpr float NARUKAMI_RUN_FEET_Y = 43.0f;
+inline constexpr float NARUKAMI_CROUCH_FEET_Y = 44.0f;
+inline constexpr int JOKER_ALL_OUT_TICKS = 7;
+inline constexpr int JOKER_ALL_OUT_MEMBER_TICKS = 18;
+inline constexpr int JOKER_ALL_OUT_FINISH_TICKS = 14;
+inline constexpr int JOKER_ALL_OUT_FINISH_HOLD_FRAMES = 20;
+inline constexpr int JOKER_SKILL_TICKS = 5;
+inline constexpr int JOKER_TAUNT_TICKS = 7;
+// All-out pose lift (pixels up from ground anchor).
+inline constexpr float JOKER_ALL_OUT_LIFT_Y = 28.0f;
+// Member portraits sit in the top of the cell; high feet keeps the full 3x3 above ground at normal Joker scale.
+inline constexpr float JOKER_ALL_OUT_MEMBER_LIFT_Y = 40.0f;
+inline constexpr float JOKER_ALL_OUT_MEMBER_FEET_Y = 100.0f;
+inline constexpr float JOKER_ALL_OUT_FINISH_LIFT_Y = 0.0f;
+// Narukami Zio / Ziodyne body + Izanagi play slower than default summons.
+inline constexpr int NARUKAMI_ZIO_SUMMON_TICKS = 10;
+inline constexpr int NARUKAMI_ZIO_PERSONA_TICKS = 8;
+// Narukami sword-hilt discard flight (behind + up, off-screen).
+inline constexpr float NARUKAMI_DISCARD_FLY_X = 14.0f;
+inline constexpr float NARUKAMI_DISCARD_FLY_Y = 10.0f;
+inline constexpr float NARUKAMI_MYRIAD_IZANAGI_LIFT_Y = 90.0f;
 inline constexpr float AGI_MABUFU_OFFSET_X = 14.0f;
 inline constexpr float AGI_MABUFU_OFFSET_Y = 8.0f;
 inline constexpr int ACTION_VISUAL_HOLD_FRAMES = 0;
 inline constexpr int INTRO_TO_STANCE_BLEND_FRAMES = 0;
-inline constexpr int INTRO_VISUAL_HOLD_FRAMES = 0;
+inline constexpr int INTRO_VISUAL_HOLD_FRAMES = 8;
 inline constexpr int PERSONA_ANIM_DELAY = 5;
 inline constexpr int PERSONA_EFFECT_ANIM_DELAY = 3;
 inline constexpr int THANATOS_SLASH_ANIM_DELAY = 4;
 inline constexpr int PERSONA_STANCE_ANIM_TICKS = 6;
-inline constexpr int MAKOTO_INTRO_TICKS = 14;
+inline constexpr int MAKOTO_INTRO_TICKS = 10;
+// Hold last intro frame briefly before stance so the handoff does not flash.
+inline constexpr int INTRO_END_HOLD_FRAMES = 8;
 inline constexpr int MAKOTO_SUMMON_AIR_TICKS = 6;
 inline constexpr int IDLE_THRESHOLD_FRAMES = 600;
 inline constexpr int MEGIDOLAON_BURST_FRAME_COUNT = 8;
@@ -146,7 +192,22 @@ inline constexpr int SP_COST_SUMMON_AIR_2 = 45;
 inline constexpr int SP_COST_THANATOS_SLASH = 25;
 inline constexpr int SP_GAIN_ON_HIT = 15;
 
+// Stamina: 3 bars under SP. Most special mobility / heavy moves cost 1 full bar.
+inline constexpr float FIGHTER_MAX_STAMINA = 3.0f;
+inline constexpr float STAMINA_COST_ACTION = 1.0f;
+// Gradual run drain per animation step (not a full bar). Tuned so a long sprint empties ~1 bar quickly.
+inline constexpr float STAMINA_RUN_DRAIN_PER_STEP = 0.012f;
+// Slow passive refill while not sprinting (~1 bar every few seconds).
+inline constexpr float STAMINA_REGEN_PER_STEP = 0.005f;
+
+inline constexpr BYTE HUD_STAMINA_R = 120;
+inline constexpr BYTE HUD_STAMINA_G = 220;
+inline constexpr BYTE HUD_STAMINA_B = 90;
+inline constexpr float HUD_STAMINA_BAR_HEIGHT = 8.0f;
+inline constexpr float HUD_STAMINA_SEGMENT_GAP = 4.0f;
+
 inline constexpr int MAKOTO_MAX_HEALTH = 400;
+inline constexpr int NARUKAMI_MAX_HEALTH = 400;
 inline constexpr int JOKER_MAX_HEALTH = 400;
 inline constexpr int FIGHTER_MAX_SP = 100;
 
@@ -172,6 +233,7 @@ inline constexpr const char* HUD_FONT_FILE = NORMAL_FONT_FILE;
 inline constexpr const char* HUD_FONT_FILE_ALT = NORMAL_FONT_FILE;
 inline constexpr const char* HUD_FONT_FAMILY = NORMAL_FONT_FAMILY;
 inline constexpr int MAKOTO_CELL_SIZE = 256;
+inline constexpr int NARUKAMI_CELL_SIZE = 256;
 inline constexpr int GAME_ANIMATION_FPS = 60;
 inline constexpr int MAKOTO_LOOP_TICKS_SLOW = 4;
 inline constexpr int MAKOTO_LOOP_TICKS_FAST = 3;
@@ -266,6 +328,16 @@ inline constexpr BYTE JOKER_COLORKEY_R = 232;
 inline constexpr BYTE JOKER_COLORKEY_G = 4;
 inline constexpr BYTE JOKER_COLORKEY_B = 4;
 
+// Narukami sheet background key (yellow).
+inline constexpr BYTE NARUKAMI_COLORKEY_R = 249;
+inline constexpr BYTE NARUKAMI_COLORKEY_G = 254;
+inline constexpr BYTE NARUKAMI_COLORKEY_B = 56;
+
+// Tekken-style HP chip: hold after hit, then drain only while no new damage.
+inline constexpr int HUD_HP_CHIP_HOLD_FRAMES = 50;
+// Full chip drains over this many frames once hold ends (~1.5s at 60fps).
+inline constexpr int HUD_HP_CHIP_DRAIN_FRAMES = 90;
+
 inline void ApplyTextureColorKey(LPDIRECT3DTEXTURE9 tex, BYTE keyR, BYTE keyG, BYTE keyB) {
     if (!tex) return;
 
@@ -297,6 +369,35 @@ inline void ApplyJokerColorKey(LPDIRECT3DTEXTURE9 tex) {
 
 inline void ApplyPersonaBlueColorKey(LPDIRECT3DTEXTURE9 tex) {
     ApplyTextureColorKey(tex, PERSONA_COLORKEY_R, PERSONA_COLORKEY_G, PERSONA_COLORKEY_B);
+}
+
+inline void ApplyNarukamiColorKey(LPDIRECT3DTEXTURE9 tex) {
+    // Exact key plus a small tolerance for compression variants of the yellow BG.
+    if (!tex) return;
+
+    D3DSURFACE_DESC desc;
+    tex->GetLevelDesc(0, &desc);
+
+    D3DLOCKED_RECT rect;
+    if (FAILED(tex->LockRect(0, &rect, NULL, 0))) return;
+
+    constexpr int kTolerance = 8;
+    for (UINT y = 0; y < desc.Height; y++) {
+        DWORD* row = (DWORD*)((BYTE*)rect.pBits + y * rect.Pitch);
+        for (UINT x = 0; x < desc.Width; x++) {
+            DWORD pixel = row[x];
+            const int r = (int)((pixel >> 16) & 0xFF);
+            const int g = (int)((pixel >> 8) & 0xFF);
+            const int b = (int)(pixel & 0xFF);
+            if (abs(r - (int)NARUKAMI_COLORKEY_R) <= kTolerance &&
+                abs(g - (int)NARUKAMI_COLORKEY_G) <= kTolerance &&
+                abs(b - (int)NARUKAMI_COLORKEY_B) <= kTolerance) {
+                row[x] = 0x00000000;
+            }
+        }
+    }
+
+    tex->UnlockRect(0);
 }
 
 inline void DrawScaledCharacterSprite(

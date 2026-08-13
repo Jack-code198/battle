@@ -2,7 +2,7 @@
 #include "../Fighter.h"
 #include "../../config.h"
 
-// Player 1 fighter (OO subclass of Fighter).
+// Makoto fighter (OO subclass of Fighter).
 // Owns Makoto animation state, melee/persona skills, gravity jump, and sprite rendering.
 
 enum MakotoState {
@@ -38,6 +38,7 @@ private:
     D3DCOLOR overlayColor;
 
     D3DXVECTOR3 currentEnemyPos;
+    D3DXVECTOR3 originalPosition;
 
     bool isOrpheusActive, isJackFrostActive, isAGIActive, isMabufuActive;
     bool isThanatosActive, isMaziodyneActive, isThanatosSlashActive;
@@ -58,6 +59,7 @@ private:
     bool hitAGI, hitMabufu, hitMaziodyne, hitSlash, hitMegidolaon;
     bool hitThisAttack;
     bool dashHasHit;
+    bool attackButtonHeld;
 
     int slashAnimTimer;
     int slashTotalFrames;
@@ -68,6 +70,8 @@ private:
     int animAccumulator;
     int personaAnimAccumulator;
     int noInputFrames;
+    int idleWaitFrames;
+    int damageGroundHold;
     int introDisplayHold;
     int introLastFrame;
     int stanceEntryDelay;
@@ -82,7 +86,7 @@ private:
     void BeginMaziodyneSuper();
     void BeginMessiahSuper();
 
-    void UpdateLiveEffectPositions(class Joker& enemy);
+    void UpdateLiveEffectPositions(Fighter& enemy);
     void CompleteOneShotToStance(int lastFrame);
     void TickVisualHolds(int animSteps);
 
@@ -92,14 +96,19 @@ private:
 
     void UpdateInputAndMovement();
     void UpdateAnimation();
-    void UpdatePersonaLogic(class Joker& enemy, int steps);
+    void UpdatePersonaLogic(Fighter& enemy, int steps);
     void FinishPersonaSequence();
     void ApplyGravity(int steps);
     bool IsOnGround() const;
-    void CheckAttackCollision(class Joker& enemy);
-    void OnMeleeHitConnected(class Joker& enemy);
+    void CheckAttackCollision(Fighter& enemy);
+    void OnMeleeHitConnected(Fighter& enemy);
     void UpdateMeleeHitSpark(int steps);
     void RenderMeleeHitSpark(LPD3DXSPRITE sprite);
+    void UpdateSandbag(int steps);
+    void BeginSandbagHitReaction();
+    void BeginSandbagRecover();
+    void FinishSandbagRecover();
+
 public:
     Makoto();
     ~Makoto();
@@ -111,16 +120,15 @@ public:
 
     int GetCurrentState() const { return currentState; }
     int GetCurrentFrame() const { return currentFrame; }
-    bool IsSuperMoveActive() const { return isSuperMoveActive; }
+    bool IsSuperMoveActive() const override { return isSuperMoveActive; }
     bool IsGray() const { return isMakotoGray; }
-    D3DCOLOR GetOverlayColor() const { return overlayColor; }
+    D3DCOLOR GetOverlayColor() const override { return overlayColor; }
 
-    int GetFacingDirection() const { return facingDirection; }
-    const D3DXVECTOR3& GetPosition() const { return position; }
+    AABB GetBodyCollisionBox() const override;
 
     bool IsAttacking() const;
 
-    void RenderDebugHitbox(LPD3DXSPRITE sprite);
+    void RenderDebugHitbox(LPD3DXSPRITE sprite) override;
 };
 
 bool LoadMakotoTextures();

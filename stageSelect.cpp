@@ -72,8 +72,8 @@ static bool CreateStageUiFont(const char* familyName, INT height, ID3DXFont** ou
         1,
         FALSE,
         DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
+        OUT_TT_PRECIS,
+        ANTIALIASED_QUALITY,
         DEFAULT_PITCH | FF_DONTCARE,
         familyName,
         outFont);
@@ -163,6 +163,18 @@ void CleanUpStageTextures() {
         g_StageHintFont->Release();
         g_StageHintFont = nullptr;
     }
+}
+
+void NotifyStageDeviceLost() {
+    if (g_StageFont) g_StageFont->OnLostDevice();
+    if (g_StageTitleFont) g_StageTitleFont->OnLostDevice();
+    if (g_StageHintFont) g_StageHintFont->OnLostDevice();
+}
+
+void NotifyStageDeviceReset() {
+    if (g_StageFont) g_StageFont->OnResetDevice();
+    if (g_StageTitleFont) g_StageTitleFont->OnResetDevice();
+    if (g_StageHintFont) g_StageHintFont->OnResetDevice();
 }
 
 void ApplySelectedStageToBattle() {
@@ -353,19 +365,23 @@ static void UpdateStageSelectInput(int& choice) {
 
     if (leftPressed && !g_StageLeftHeld) {
         g_SelectedStageIndex = (g_SelectedStageIndex - 1 + STAGE_COUNT) % STAGE_COUNT;
+        g_SoundManager.PlaySelectionSound();
     }
     if (rightPressed && !g_StageRightHeld) {
         g_SelectedStageIndex = (g_SelectedStageIndex + 1) % STAGE_COUNT;
+        g_SoundManager.PlaySelectionSound();
     }
     g_StageLeftHeld = leftPressed;
     g_StageRightHeld = rightPressed;
 
     if (enterPressed && !g_StageEnterHeld) {
+        g_SoundManager.PlaySelectionSound();
         choice = 1;
     }
     g_StageEnterHeld = enterPressed;
 
     if (backPressed && !g_StageBackHeld) {
+        g_SoundManager.PlaySelectionSound();
         choice = 2;
     }
     g_StageBackHeld = backPressed;
@@ -374,13 +390,16 @@ static void UpdateStageSelectInput(int& choice) {
         if (PtInRect(&g_StageLeftHit, cursorPt)) {
             g_StageUiFocus = StageUi_Left;
             g_SelectedStageIndex = (g_SelectedStageIndex - 1 + STAGE_COUNT) % STAGE_COUNT;
+            g_SoundManager.PlaySelectionSound();
         }
         else if (PtInRect(&g_StageRightHit, cursorPt)) {
             g_StageUiFocus = StageUi_Right;
             g_SelectedStageIndex = (g_SelectedStageIndex + 1) % STAGE_COUNT;
+            g_SoundManager.PlaySelectionSound();
         }
         else if (PtInRect(&g_StageConfirmHit, cursorPt)) {
             g_StageUiFocus = StageUi_Confirm;
+            g_SoundManager.PlaySelectionSound();
             choice = 1;
         }
     }

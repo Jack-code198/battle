@@ -1,0 +1,85 @@
+#include "FontRenderer.h"
+#include <cstdio>
+
+FontRenderer::FontRenderer()
+    : font(nullptr)
+    , loadedFontPath(nullptr)
+    , fontResourceLoaded(false) {
+}
+
+FontRenderer::~FontRenderer() {
+    Release();
+}
+
+bool FontRenderer::Create(LPDIRECT3DDEVICE9 device, const char* fontFile, const char* family, int height) {
+    Release();
+    if (!device || !fontFile || !family) return false;
+
+    if (AddFontResourceExA(fontFile, FR_PRIVATE, 0) > 0) {
+        loadedFontPath = fontFile;
+        fontResourceLoaded = true;
+    }
+
+    HRESULT hr = D3DXCreateFontA(
+        device,
+        height,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        ANTIALIASED_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        family,
+        &font);
+
+    return SUCCEEDED(hr) && font != nullptr;
+}
+
+void FontRenderer::Release() {
+    if (font) {
+        font->Release();
+        font = nullptr;
+    }
+    if (fontResourceLoaded && loadedFontPath) {
+        RemoveFontResourceExA(loadedFontPath, FR_PRIVATE, 0);
+        loadedFontPath = nullptr;
+        fontResourceLoaded = false;
+    }
+}
+
+void FontRenderer::OnLostDevice() {
+    if (font) font->OnLostDevice();
+}
+
+void FontRenderer::OnResetDevice() {
+    if (font) font->OnResetDevice();
+}
+
+void FontRenderer::DrawTextA(
+    const char* text,
+    float x,
+    float y,
+    D3DCOLOR color,
+    bool rightAlign,
+    float rightEdgeX) const
+{
+    if (!font || !text) return;
+
+    RECT rect;
+    if (rightAlign) {
+        rect.left = 0;
+        rect.top = (LONG)y;
+        rect.right = (LONG)rightEdgeX;
+        rect.bottom = (LONG)(y + 64.0f);
+        font->DrawTextA(nullptr, text, -1, &rect, DT_RIGHT | DT_NOCLIP, color);
+    }
+    else {
+        rect.left = (LONG)x;
+        rect.top = (LONG)y;
+        rect.right = (LONG)(x + 800.0f);
+        rect.bottom = (LONG)(y + 64.0f);
+        font->DrawTextA(nullptr, text, -1, &rect, DT_LEFT | DT_NOCLIP, color);
+    }
+}

@@ -9,6 +9,7 @@ void FrameTimer::Init(int fps)
 	intervalsPerFrame = ((float)timerFreq.QuadPart / requestedFPS);
 	intervalsSinceLastUpdate = 0.0f;
 	framesToUpdate = 0;
+	lastFramesToUpdate = 0;
 }
 
 int FrameTimer::FramesToUpdate()
@@ -21,5 +22,6 @@ int FrameTimer::FramesToUpdate()
 	{
 		timePrevious.QuadPart += (LONGLONG)(framesToUpdate * intervalsPerFrame);
 	}
+	lastFramesToUpdate = framesToUpdate;
 	return framesToUpdate;
 }

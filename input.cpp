@@ -76,9 +76,7 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
     case WM_KEYDOWN:
         switch (wParam) {
         case VK_ESCAPE:
-            if (IsFullscreen()) {
-                ToggleFullscreen();
-            }
+            // Fullscreen toggle is on F. Escape is used by menus / battle-to-menu.
             break;
         case 'Q':
             PostQuitMessage(0);
@@ -87,17 +85,14 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             ToggleFullscreen();
             break;
         case 'H':
-            if (TRAINING_MODE) {
-                g_Player1.health = g_Player1.GetMaxHealth();
-                g_Player1.isDead = false;
-                g_Player2.Reset();
-                SyncBattleHudHealth(1, g_Player1.GetHealth(), g_Player1.GetMaxHealth());
-                SyncBattleHudHealth(2, g_Player2.GetHealth(), g_Player2.GetMaxHealth());
-            }
-            else {
-                g_Player2.Reset();
-                SyncBattleHudHealth(2, g_Player2.GetHealth(), g_Player2.GetMaxHealth());
-            }
+            // Training heal only — do NOT Reset() (that teleports P2 and replays intro).
+            if (!g_Player1 || !g_Player2) break;
+            g_Player1->health = g_Player1->GetMaxHealth();
+            g_Player1->isDead = false;
+            g_Player2->health = g_Player2->GetMaxHealth();
+            g_Player2->isDead = false;
+            SyncBattleHudHealth(1, g_Player1->GetHealth(), g_Player1->GetMaxHealth());
+            SyncBattleHudHealth(2, g_Player2->GetHealth(), g_Player2->GetMaxHealth());
             break;
         case 'B':
             g_ShowDebugHitboxes = !g_ShowDebugHitboxes;
@@ -192,8 +187,14 @@ void CreateMyWindow() {
     wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClass(&wndClass);
 
+    // Size the outer window so the client area is exactly SCREEN_WIDTH x SCREEN_HEIGHT.
+    RECT windowRect = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
+    AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
+    const int windowW = windowRect.right - windowRect.left;
+    const int windowH = windowRect.bottom - windowRect.top;
+
     g_hWnd = CreateWindowEx(0, wndClass.lpszClassName, "Persona Framework", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, NULL, NULL, GetModuleHandle(NULL), NULL);
+        CW_USEDEFAULT, CW_USEDEFAULT, windowW, windowH, NULL, NULL, GetModuleHandle(NULL), NULL);
 
     LoadGameCursor();
     SetMenuCursorEnabled(true);
