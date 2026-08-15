@@ -8,6 +8,7 @@ static LPDIRECT3DTEXTURE9 g_MakotoIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_JokerIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_NarukamiIconTex = nullptr;
 static ID3DXFont* g_HudFont = nullptr;
+static ID3DXFont* g_BannerFont = nullptr;
 static bool g_HudFontLoaded = false;
 static const char* g_LoadedHudFontPath = nullptr;
 
@@ -64,6 +65,91 @@ static bool LoadHudFont() {
     }
 
     return SUCCEEDED(hr) && g_HudFont != nullptr;
+}
+
+static void EnsureBannerFont() {
+    if (g_BannerFont || !g_pD3DDevice) return;
+    D3DXCreateFontA(
+        g_pD3DDevice,
+        120,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_TT_PRECIS,
+        ANTIALIASED_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        HUD_FONT_FAMILY,
+        &g_BannerFont);
+}
+
+static void DrawCenteredBanner(const char* text, D3DCOLOR color) {
+    if (!text) return;
+    EnsureBannerFont();
+    if (!g_BannerFont) return;
+
+    RECT rect;
+    rect.left = 0;
+    rect.top = (LONG)(SCREEN_HEIGHT * 0.35f);
+    rect.right = SCREEN_WIDTH;
+    rect.bottom = rect.top + 160;
+    g_BannerFont->DrawTextA(nullptr, text, -1, &rect, DT_CENTER | DT_VCENTER | DT_NOCLIP, color);
+}
+
+void DrawBattleRoundOverlay() {
+    if (ShouldShowBattleKo()) {
+        DrawCenteredBanner("KO", D3DCOLOR_XRGB(255, 48, 48));
+        return;
+    }
+    if (const char* label = GetBattleCountdownLabel()) {
+        const D3DCOLOR color = (label[0] == 'F')
+            ? D3DCOLOR_XRGB(255, 220, 64)
+            : D3DCOLOR_XRGB(255, 255, 255);
+        DrawCenteredBanner(label, color);
+    }
+}
+
+void DrawBattleTimerOverlay() {
+    if (!IsBattleCombatActive() || IsTutorialBattleMode()) return;
+    if (!LoadHudFont() || !g_HudFont) return;
+
+    const int seconds = (g_BattleTimeRemainingSteps + 59) / 60;
+    char timeText[16];
+    sprintf_s(timeText, "%02d", seconds);
+
+    const D3DCOLOR color = (seconds <= 10)
+        ? D3DCOLOR_XRGB(255, 72, 72)
+        : D3DCOLOR_XRGB(255, 255, 255);
+
+    RECT rect = {
+        SCREEN_WIDTH / 2 - 48,
+        6,
+        SCREEN_WIDTH / 2 + 48,
+        42
+    };
+    g_HudFont->DrawTextA(
+        nullptr,
+        timeText,
+        -1,
+        &rect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        color);
+}
+
+void DrawBattleFadeOverlay(LPD3DXSPRITE sprite) {
+    if (!sprite || g_BattleFlowPhase != BattleFlowPhase::FadeOut) return;
+
+    int alpha = (int)(255.0f * (float)g_BattleFlowTimer / (float)BATTLE_FADE_OUT_STEPS);
+    if (alpha < 0) alpha = 0;
+    if (alpha > 255) alpha = 255;
+    DrawDebugRect(
+        sprite,
+        0.0f,
+        0.0f,
+        (float)SCREEN_WIDTH,
+        (float)SCREEN_HEIGHT,
+        D3DCOLOR_ARGB((BYTE)alpha, 0, 0, 0));
 }
 
 static void DrawHudText(const char* text, float x, float y, D3DCOLOR color, bool rightAlign, float alignEdgeX) {
@@ -340,6 +426,10 @@ void CleanUpHudTextures() {
         g_HudFont->Release();
         g_HudFont = nullptr;
     }
+    if (g_BannerFont) {
+        g_BannerFont->Release();
+        g_BannerFont = nullptr;
+    }
     if (g_HudFontLoaded && g_LoadedHudFontPath) {
         RemoveFontResourceExA(g_LoadedHudFontPath, FR_PRIVATE, 0);
         g_LoadedHudFontPath = nullptr;
@@ -361,10 +451,12 @@ void CleanUpHudTextures() {
 
 void NotifyHudDeviceLost() {
     if (g_HudFont) g_HudFont->OnLostDevice();
+    if (g_BannerFont) g_BannerFont->OnLostDevice();
 }
 
 void NotifyHudDeviceReset() {
     if (g_HudFont) g_HudFont->OnResetDevice();
+    if (g_BannerFont) g_BannerFont->OnResetDevice();
 }
 
 void ResetBattleHud(int p1MaxHealth, int p2MaxHealth) {

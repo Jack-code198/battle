@@ -32,13 +32,16 @@ static bool g_PlayerSelectEnterHeld = false;
 static bool g_PlayerSelectBackHeld = false;
 static bool g_PlayerSelectClickHeld = false;
 
-// Phase 0 = choosing P1, phase 1 = choosing P2.
+// Phase 0 = choosing P1, phase 1 = choosing P2, phase 2 = battle / tutorial mode.
 static int g_SelectPhase = 0;
 static int g_HighlightIndex = 0;
+static int g_ModeHighlight = 0;
 static CharacterId g_PendingP1 = Char_Makoto;
 static int g_LastHoveredPortrait = -1;
+static int g_LastHoveredModeOption = -1;
 
 static RECT g_PortraitHits[ROSTER_COUNT] = {};
+static RECT g_ModeOptionHits[2] = {};
 
 static const D3DCOLOR PLAYER_SELECT_COLOR_NORMAL = D3DCOLOR_XRGB(255, 255, 255);
 static const D3DCOLOR PLAYER_SELECT_COLOR_SELECTED = D3DCOLOR_XRGB(255, 230, 80);
@@ -61,6 +64,40 @@ static const LONG PLAYER_SELECT_HINT_TOP = 700;
 static const LONG PLAYER_SELECT_HINT_BOTTOM = 740;
 static const LONG PLAYER_SELECT_HINT_SIDE_MARGIN = 40;
 static const LONG PLAYER_SELECT_LABEL_HEIGHT = 28;
+
+static const float MODE_OPTION_WIDTH = 320.0f;
+static const float MODE_OPTION_HEIGHT = 72.0f;
+static const float MODE_OPTION_GAP = 64.0f;
+static const float MODE_OPTION_TOP = 280.0f;
+
+static const char* GetBattleModeLabel(BattleMode mode) {
+    return (mode == BattleMode::Tutorial) ? "TUTORIAL MODE (SAND BAG)" : "BATTLE MODE";
+}
+
+static void GetModeOptionLayout(int index, float& x, float& y, float& w, float& h) {
+    const float totalWidth = MODE_OPTION_WIDTH * 2.0f + MODE_OPTION_GAP;
+    const float startX = ((float)SCREEN_WIDTH - totalWidth) * 0.5f;
+    x = startX + (float)index * (MODE_OPTION_WIDTH + MODE_OPTION_GAP);
+    y = MODE_OPTION_TOP;
+    w = MODE_OPTION_WIDTH;
+    h = MODE_OPTION_HEIGHT;
+}
+
+static void UpdateModeOptionHitboxes() {
+    for (int i = 0; i < 2; i++) {
+        float x = 0.0f;
+        float y = 0.0f;
+        float w = 0.0f;
+        float h = 0.0f;
+        GetModeOptionLayout(i, x, y, w, h);
+        g_ModeOptionHits[i] = {
+            (LONG)x,
+            (LONG)y,
+            (LONG)(x + w),
+            (LONG)(y + h)
+        };
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Fonts
@@ -238,9 +275,16 @@ static void ConfirmCurrentHighlight(int& choice) {
         g_SelectPhase = 1;
         g_LastHoveredPortrait = -1;
     }
-    else {
+    else if (g_SelectPhase == 1) {
         g_SelectedP1 = g_PendingP1;
         g_SelectedP2 = g_Roster[g_HighlightIndex].id;
+        g_SelectPhase = 2;
+        g_ModeHighlight = 0;
+        g_LastHoveredPortrait = -1;
+        g_LastHoveredModeOption = -1;
+    }
+    else {
+        g_SelectedBattleMode = (g_ModeHighlight == 0) ? BattleMode::Battle : BattleMode::Tutorial;
         choice = 1;
     }
 }
@@ -248,6 +292,104 @@ static void ConfirmCurrentHighlight(int& choice) {
 // ---------------------------------------------------------------------------
 // Draw
 // ---------------------------------------------------------------------------
+
+static void DrawModeOption(int index, bool highlighted) {
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    GetModeOptionLayout(index, x, y, w, h);
+
+    const BattleMode mode = (index == 0) ? BattleMode::Battle : BattleMode::Tutorial;
+    DrawDebugRect(spriteBrush, x, y, w, h, D3DCOLOR_ARGB(200, 32, 32, 32));
+
+    const float frame = PORTRAIT_FRAME_THICKNESS;
+    const D3DCOLOR frameColor = highlighted ? PLAYER_SELECT_FRAME_COLOR : PLAYER_SELECT_FRAME_IDLE;
+    DrawDebugRect(spriteBrush, x - frame, y - frame, w + frame * 2.0f, frame, frameColor);
+    DrawDebugRect(spriteBrush, x - frame, y + h, w + frame * 2.0f, frame, frameColor);
+    DrawDebugRect(spriteBrush, x - frame, y - frame, frame, h + frame * 2.0f, frameColor);
+    DrawDebugRect(spriteBrush, x + w, y - frame, frame, h + frame * 2.0f, frameColor);
+
+    if (g_PlayerSelectFont) {
+        RECT labelRect = {
+            (LONG)x,
+            (LONG)(y + 18.0f),
+            (LONG)(x + w),
+            (LONG)(y + h)
+        };
+        const D3DCOLOR textColor = highlighted
+            ? PLAYER_SELECT_COLOR_SELECTED
+            : PLAYER_SELECT_COLOR_NORMAL;
+        g_PlayerSelectFont->DrawTextA(
+            spriteBrush,
+            GetBattleModeLabel(mode),
+            -1,
+            &labelRect,
+            DT_CENTER | DT_TOP | DT_SINGLELINE,
+            textColor);
+    }
+}
+
+static void DrawModeSelectUi() {
+    if (!spriteBrush) return;
+
+    if (g_PlayerSelectTitleFont) {
+        RECT titleRect = {
+            0,
+            PLAYER_SELECT_TITLE_TOP,
+            SCREEN_WIDTH,
+            PLAYER_SELECT_TITLE_BOTTOM
+        };
+        g_PlayerSelectTitleFont->DrawTextA(
+            spriteBrush,
+            "SELECT MODE",
+            -1,
+            &titleRect,
+            DT_CENTER | DT_TOP,
+            PLAYER_SELECT_COLOR_NORMAL);
+    }
+
+    if (g_PlayerSelectFont) {
+        char vsLine[96];
+        sprintf_s(
+            vsLine,
+            "%s  VS  %s",
+            GetCharacterDisplayName(g_SelectedP1),
+            GetCharacterDisplayName(g_SelectedP2));
+        RECT vsRect = {
+            0,
+            PLAYER_SELECT_VS_TOP,
+            SCREEN_WIDTH,
+            PLAYER_SELECT_VS_BOTTOM
+        };
+        g_PlayerSelectFont->DrawTextA(
+            spriteBrush,
+            vsLine,
+            -1,
+            &vsRect,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            PLAYER_SELECT_COLOR_SELECTED);
+    }
+
+    DrawModeOption(0, g_ModeHighlight == 0);
+    DrawModeOption(1, g_ModeHighlight == 1);
+
+    if (g_PlayerSelectHintFont) {
+        RECT hintRect = {
+            PLAYER_SELECT_HINT_SIDE_MARGIN,
+            PLAYER_SELECT_HINT_TOP,
+            SCREEN_WIDTH - PLAYER_SELECT_HINT_SIDE_MARGIN,
+            PLAYER_SELECT_HINT_BOTTOM
+        };
+        g_PlayerSelectHintFont->DrawTextA(
+            spriteBrush,
+            "Left/Right or A/D: change mode    Enter / Click: Confirm    Esc: back",
+            -1,
+            &hintRect,
+            DT_CENTER | DT_TOP | DT_SINGLELINE,
+            PLAYER_SELECT_COLOR_DIM);
+    }
+}
 
 static void DrawPortrait(int index, bool highlighted) {
     float x = 0.0f;
@@ -311,6 +453,11 @@ static void DrawPortrait(int index, bool highlighted) {
 
 static void DrawPlayerSelectUi() {
     if (!spriteBrush) return;
+
+    if (g_SelectPhase == 2) {
+        DrawModeSelectUi();
+        return;
+    }
 
     UpdatePortraitHitboxes();
 
@@ -396,6 +543,27 @@ static void RenderPlayerSelect() {
 // Input
 // ---------------------------------------------------------------------------
 
+static void UpdateModeSelectHoverFromCursor() {
+    POINT cursorPt = {};
+    int hovered = -1;
+    if (GetGameCursorPos(cursorPt)) {
+        for (int i = 0; i < 2; i++) {
+            if (PtInRect(&g_ModeOptionHits[i], cursorPt)) {
+                hovered = i;
+                g_ModeHighlight = i;
+                break;
+            }
+        }
+    }
+
+    if (hovered != g_LastHoveredModeOption) {
+        if (hovered >= 0) {
+            g_SoundManager.PlaySelectionSound();
+        }
+        g_LastHoveredModeOption = hovered;
+    }
+}
+
 static void UpdatePlayerSelectHoverFromCursor() {
     POINT cursorPt = {};
     int hovered = -1;
@@ -418,6 +586,61 @@ static void UpdatePlayerSelectHoverFromCursor() {
 }
 
 static void UpdatePlayerSelectInput(int& choice) {
+    if (g_SelectPhase == 2) {
+        UpdateModeOptionHitboxes();
+        UpdateModeSelectHoverFromCursor();
+
+        bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
+        bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
+        bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
+        bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+        bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+
+        POINT cursorPt = {};
+        bool hasCursor = GetGameCursorPos(cursorPt);
+
+        if (leftPressed && !g_PlayerSelectLeftHeld) {
+            g_ModeHighlight = (g_ModeHighlight - 1 + 2) % 2;
+            g_SoundManager.PlaySelectionSound();
+        }
+        if (rightPressed && !g_PlayerSelectRightHeld) {
+            g_ModeHighlight = (g_ModeHighlight + 1) % 2;
+            g_SoundManager.PlaySelectionSound();
+        }
+        g_PlayerSelectLeftHeld = leftPressed;
+        g_PlayerSelectRightHeld = rightPressed;
+
+        if (enterPressed && !g_PlayerSelectEnterHeld) {
+            ConfirmCurrentHighlight(choice);
+        }
+        g_PlayerSelectEnterHeld = enterPressed;
+
+        if (backPressed && !g_PlayerSelectBackHeld) {
+            g_SoundManager.PlaySelectionSound();
+            g_SelectPhase = 1;
+            g_LastHoveredModeOption = -1;
+            for (int i = 0; i < ROSTER_COUNT; i++) {
+                if (g_Roster[i].id == g_SelectedP2) {
+                    g_HighlightIndex = i;
+                    break;
+                }
+            }
+        }
+        g_PlayerSelectBackHeld = backPressed;
+
+        if (clickPressed && !g_PlayerSelectClickHeld && hasCursor) {
+            for (int i = 0; i < 2; i++) {
+                if (PtInRect(&g_ModeOptionHits[i], cursorPt)) {
+                    g_ModeHighlight = i;
+                    ConfirmCurrentHighlight(choice);
+                    break;
+                }
+            }
+        }
+        g_PlayerSelectClickHeld = clickPressed;
+        return;
+    }
+
     UpdatePortraitHitboxes();
     UpdatePlayerSelectHoverFromCursor();
 
@@ -484,7 +707,9 @@ void ResetPlayerSelectInputState() {
     g_PlayerSelectBackHeld = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
     g_PlayerSelectClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_LastHoveredPortrait = -1;
+    g_LastHoveredModeOption = -1;
     g_SelectPhase = 0;
+    g_ModeHighlight = 0;
     g_HighlightIndex = 0;
 }
 

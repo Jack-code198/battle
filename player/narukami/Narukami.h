@@ -31,7 +31,9 @@ enum NarukamiState {
     NARUKAMI_SUMMON_ZIODYNE,
     NARUKAMI_RAGING_LION,
     NARUKAMI_BIG_GAMBLE,
-    NARUKAMI_MYRIAD_TRUTHS
+    NARUKAMI_MYRIAD_TRUTHS,
+    NARUKAMI_WIN,
+    NARUKAMI_LOSE
 };
 
 class Narukami : public Fighter {
@@ -90,14 +92,21 @@ public:
 
     void Update() override;
     void Render(LPD3DXSPRITE sprite) override;
+    void RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
     void ApplySkillDamage(int damage) override;
     void Reset() override;
+
+    void BeginVictoryPose() override;
+    void BeginDefeatPose() override;
+    bool IsPlayingResultPose() const override;
+    bool IsInCombatAction() const override;
 
     bool IsSuperMoveActive() const override;
     D3DCOLOR GetOverlayColor() const override;
     void RenderDebugHitbox(LPD3DXSPRITE sprite) override;
     AABB GetBodyCollisionBox() const override;
+    void UpdateScaledHurtbox() override;
 
     int GetCurrentState() const { return currentState; }
 };

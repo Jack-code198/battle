@@ -1,10 +1,12 @@
 #include "Makoto.h"
+#include "../../ai.h"
 #include "../../config.h"
 #include "../../renderer.h"
 #include "../../game_logic.h"
 #include "../../input.h"
 #include <cmath>
 #include <float.h>
+#include <optional>
 #include <stdio.h>
 
 extern AttackData attackHitbox;
@@ -97,6 +99,7 @@ static const MakotoTexture* GetTextureForState(int state) {
     case SUMMON_AIR_THANATOS: return &makotoSummonAir;
     case MAKOTO_WIN: return &makotoWinTex;
     case THANATOS_WIN: return &makotoThanatosWin;
+    case MAKOTO_LOSE: return &makotoDamage;
     case SUMMON_1_ORPHEUS: case SUMMON_2_JACKFROST:
     case SUMMON_AIR_MAZIODYNE: case SUMMON_AIR_MESSIAH: case THANATOS_SLASH:
         return &makotoStance;
@@ -389,13 +392,7 @@ Makoto::Makoto()
 }
 
 AABB Makoto::GetBodyCollisionBox() const {
-    float s = GetMakotoDrawScale();
-    AABB box;
-    box.width = MAKOTO_BODY_WIDTH * s;
-    box.height = MAKOTO_BODY_HEIGHT * s;
-    box.x = position.x - box.width * 0.5f;
-    box.y = position.y - box.height;
-    return box;
+    return MakeLivePushbox(position, MAKOTO_BODY_WIDTH, MAKOTO_BODY_HEIGHT, GetMakotoDrawScale());
 }
 
 Makoto::~Makoto() {}
@@ -586,6 +583,7 @@ void Makoto::BeginMaziodyneSuper() {
     currentFrame = 0;
     animAccumulator = 0;
     personaAnimAccumulator = 0;
+    skillEndHold = 0;
     verticalVelocity = 0.0f;
     isSuperMoveActive = true;
     superMoveTimer = 0;
@@ -598,6 +596,9 @@ void Makoto::BeginMaziodyneSuper() {
     isMaziodyneActive = true;
     maziodyneAnimationComplete = false;
     hitMaziodyne = false;
+    if (Fighter* foe = GetOpponent(*this)) {
+        PullEnemyForUltimate(*this, *foe, true);
+    }
 }
 
 void Makoto::BeginMessiahSuper() {
@@ -605,6 +606,7 @@ void Makoto::BeginMessiahSuper() {
     currentFrame = 0;
     animAccumulator = 0;
     personaAnimAccumulator = 0;
+    skillEndHold = 0;
     maxFrame = GetMaxFrameForState(STANCE);
     verticalVelocity = 0.0f;
     spaceChordBuffer = 0;
@@ -618,6 +620,9 @@ void Makoto::BeginMessiahSuper() {
     isMegidolaonActive = true;
     megidolaonAnimationComplete = false;
     hitMegidolaon = false;
+    if (Fighter* foe = GetOpponent(*this)) {
+        PullEnemyForUltimate(*this, *foe, true);
+    }
 }
 
 void Makoto::UpdateLiveEffectPositions(Fighter& enemy) {
@@ -653,7 +658,7 @@ void Makoto::UpdateLiveEffectPositions(Fighter& enemy) {
 }
 
 void Makoto::Update() {
-    if (isDead) return;
+    if (isDead && !IsPlayingResultPose()) return;
 
     int steps = 0;
     if (OwnsFrameTimer()) {
@@ -665,7 +670,40 @@ void Makoto::Update() {
     if (steps <= 0) return;
     if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
+    if (IsPlayingResultPose()) {
+        const int animSteps = 1;
+        maxFrame = GetMaxFrameForState(currentState);
+        if (maxFrame < 1) maxFrame = 1;
+        if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+        }
+        else {
+            currentFrame = maxFrame - 1;
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    if (!IsHumanControlled() && IsTutorialBattleMode()) {
+        UpdateSandbag(steps);
+        return;
+    }
+
+    // CPU reaction path (intro / damage / recover) — no AI keys.
+    if (!IsHumanControlled() && IsCpuLockedInReaction(*this, currentState)) {
+        UpdateSandbag(steps);
+        return;
+    }
+
+    // Only the CPU enables the AI key overlay (P1 keeps real keyboard/mouse).
+    std::optional<AiInputScope> aiInputScope;
     if (!IsHumanControlled()) {
+        aiInputScope.emplace();
+        DriveSimpleAi(*this);
+    }
+
+    // Shared knockdown / get-up (gravity + damage sheet).
+    if (currentState == DAMAGE || currentState == RECOVER) {
         UpdateSandbag(steps);
         return;
     }
@@ -727,7 +765,7 @@ void Makoto::Update() {
 
     if (AllowsMakotoMovement(currentState, isSuperMoveActive) &&
         isMoving && currentState != DASH && currentState != DODGE_FORWARD && currentState != DODGE_BACKWARD) {
-        position.x += moveDirX * currentVelocity * steps;
+        TryApplyHorizontalDelta(moveDirX * currentVelocity * steps);
         ClampMakotoCenterX(position.x);
     }
 
@@ -804,7 +842,7 @@ void Makoto::Update() {
     }
 
     if (currentState == DODGE_FORWARD) {
-        position.x += (velocity * DODGE_SLIDE_SPEED) * steps;
+        TryApplyHorizontalDelta((velocity * DODGE_SLIDE_SPEED) * steps);
         ClampMakotoCenterX(position.x);
         maxFrame = GetMaxFrameForState(DODGE_FORWARD);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {
@@ -826,7 +864,7 @@ void Makoto::Update() {
     }
 
     if (currentState == DASH) {
-        position.x += (float)facingDirection * (velocity * MAKOTO_DASH_SPEED_MULTIPLIER) * steps;
+        TryApplyHorizontalDelta((float)facingDirection * (velocity * MAKOTO_DASH_SPEED_MULTIPLIER) * steps);
         ClampMakotoCenterX(position.x);
         maxFrame = GetMaxFrameForState(DASH);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {
@@ -921,7 +959,7 @@ void Makoto::Update() {
             currentFrame = 0;
             spaceWasReleased = false;
         }
-        position.x += jumpHorizontalSpeed * steps;
+        TryApplyHorizontalDelta(jumpHorizontalSpeed * steps);
         ClampMakotoCenterX(position.x);
 
         // Measured jump-sheet deltas (config.h) — formula uses frame index, not guessed RECTs.
@@ -1122,11 +1160,13 @@ void Makoto::Update() {
     else if (isThanatosSlashPressed && TryConsumeSp(SP_COST_THANATOS_SLASH)) {
         slashAnimTimer = 0;
         slashTotalFrames = 0;
+        skillEndHold = 0;
         nextState = THANATOS_SLASH; currentFrame = 0;
         isSuperMoveActive = true; superMoveTimer = 0; overlayColor = D3DCOLOR_ARGB(0, 0, 0, 0);
         isThanatosSlashActive = true; slashFrame = 0; hitSlash = false;
         thanatosSlashAnimationComplete = false;
         slashPos = GetThanatosSlashPos(GetEnemyHurtboxCenter(*opponent), facingDirection);
+        PullEnemyForUltimate(*this, *opponent, true);
     }
     else if (isTauntPressed) {
         nextState = TAUNT; currentFrame = 0;
@@ -1253,6 +1293,13 @@ void Makoto::FinishPersonaSequence() {
 void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
     ApplyGravity(steps);
 
+    // Keep the foe locked in close for the ultimate camera / laser framing.
+    if (currentState == SUMMON_AIR_MAZIODYNE ||
+        currentState == SUMMON_AIR_MESSIAH ||
+        currentState == THANATOS_SLASH) {
+        PullEnemyForUltimate(*this, enemy, !enemy.IsHit());
+    }
+
     if (isSuperMoveActive) {
         superMoveTimer += steps;
         int alpha = superMoveTimer * 4;
@@ -1271,7 +1318,9 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
 
     const int animDelay =
         (currentState == THANATOS_SLASH) ? THANATOS_SLASH_ANIM_DELAY
-        : (currentState == SUMMON_AIR_MAZIODYNE || currentState == SUMMON_AIR_MESSIAH)
+        : (currentState == SUMMON_AIR_MAZIODYNE)
+        ? MAZIODYNE_LASER_EFFECT_ANIM_DELAY
+        : (currentState == SUMMON_AIR_MESSIAH)
         ? PERSONA_EFFECT_ANIM_DELAY
         : PERSONA_ANIM_DELAY;
 
@@ -1357,12 +1406,16 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
                 if (maziodyneFrame >= makotoMaziodyne.maxFrame) {
                     maziodyneFrame = makotoMaziodyne.maxFrame - 1;
                     maziodyneAnimationComplete = true;
-                    isMaziodyneActive = false;
+                    // Keep drawing the last bolt while we hold for impact.
                 }
             }
 
             if (thanatosAnimationComplete && maziodyneAnimationComplete) {
-                FinishPersonaSequence();
+                skillEndHold++;
+                if (skillEndHold >= MAZIODYNE_LASER_END_HOLD_FRAMES) {
+                    isMaziodyneActive = false;
+                    FinishPersonaSequence();
+                }
             }
             break;
 
@@ -1414,7 +1467,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
 }
 
 void Makoto::Render(LPD3DXSPRITE sprite) {
-    if (isDead) return;
+    if (isDead && !IsPlayingResultPose()) return;
 
     if (Fighter* opponent = GetOpponent(*this)) {
         UpdateLiveEffectPositions(*opponent);
@@ -1443,8 +1496,8 @@ void Makoto::Render(LPD3DXSPRITE sprite) {
         }
     }
 
-    D3DCOLOR color = D3DCOLOR_XRGB(255, 255, 255);
-    D3DCOLOR fxColor = D3DCOLOR_XRGB(255, 255, 255);
+    D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
+    D3DCOLOR fxColor = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
 
     if (isOrpheusActive && orpheusFrame >= 0 && orpheusFrame < makotoOrpheus.maxFrame) {
         DrawMakotoEffectSprite(sprite, makotoOrpheus, orpheusFrame, orpheusPos, fxColor, facingDirection, PERSONA_EFFECT_SCALE);
@@ -1494,6 +1547,8 @@ void Makoto::Render(LPD3DXSPRITE sprite) {
 void Makoto::RenderDebugHitbox(LPD3DXSPRITE sprite) {
     if (!sprite) return;
     UpdateScaledHurtbox();
+    const AABB bodyBox = GetBodyCollisionBox();
+    DrawDebugRect(sprite, bodyBox.x, bodyBox.y, bodyBox.width, bodyBox.height, D3DCOLOR_ARGB(160, 255, 64, 255));
     DrawDebugRect(sprite, hurtbox.x, hurtbox.y, hurtbox.width, hurtbox.height, D3DCOLOR_ARGB(160, 64, 160, 255));
 }
 
@@ -1505,6 +1560,10 @@ void Makoto::BeginSandbagHitReaction() {
     animAccumulator = 0;
     damageGroundHold = 0;
     idleWaitFrames = 0;
+    // Pop upward so gravity can drop them to the ground (air / ultimate hits).
+    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
+        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    }
     maxFrame = GetMaxFrameForState(DAMAGE);
     if (maxFrame < 1) maxFrame = 1;
     UpdateScaledHurtbox();
@@ -1523,7 +1582,7 @@ void Makoto::BeginSandbagRecover() {
 }
 
 void Makoto::FinishSandbagRecover() {
-    position = originalPosition;
+    // Keep current X so CPU AI can keep fighting after knockdown (no sandbag spawn snap).
     isHit = false;
     hitStunTimer = 0;
     idleWaitFrames = 0;
@@ -1577,6 +1636,8 @@ void Makoto::UpdateSandbag(int steps) {
             BeginSandbagHitReaction();
         }
 
+        ApplyGravity(steps);
+
         maxFrame = GetMaxFrameForState(DAMAGE);
         if (maxFrame < 1) maxFrame = 1;
 
@@ -1584,7 +1645,14 @@ void Makoto::UpdateSandbag(int steps) {
             AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
             damageGroundHold = 0;
         }
+        else if (!IsOnGround()) {
+            // Hold last knockdown frame in the air until gravity lands them.
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
+        }
         else {
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
             damageGroundHold += steps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginSandbagRecover();
@@ -1651,26 +1719,15 @@ void Makoto::UpdateSandbag(int steps) {
 void Makoto::TakeDamage(int damage) {
     if (isDead) return;
 
-    if (!IsHumanControlled()) {
-        health -= damage;
-        if (health < 0) health = 0;
-        if (currentState != DAMAGE && currentState != RECOVER) {
-            BeginSandbagHitReaction();
-        }
-        if (!TRAINING_MODE && health <= 0) {
-            isDead = true;
-        }
-        return;
+    health -= damage;
+    if (health < 0) health = 0;
+
+    if (currentState != DAMAGE && currentState != RECOVER) {
+        BeginSandbagHitReaction();
     }
 
-    health -= damage;
-    isHit = true;
-    hitStunTimer = 20;
-    if (health <= 0) {
-        health = 0;
-        if (!TRAINING_MODE) {
-            isDead = true;
-        }
+    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+        isDead = true;
     }
 }
 
@@ -1678,7 +1735,7 @@ void Makoto::Reset() {
     ApplySlotSpawnDefaults();
     originalPosition = position;
     health = maxHealth;
-    sp = maxSp;
+    sp = 0;
     RefillStamina();
     isDead = false;
     isHit = false;
@@ -1724,6 +1781,54 @@ bool Makoto::IsAttacking() const {
     return currentState == ATTACK || currentState == SIDE_ATTACK ||
         currentState == ATTACK_UP || currentState == DOWN_ATTACK ||
         currentState == CROUCH_ATTACK;
+}
+
+void Makoto::BeginVictoryPose() {
+    isHit = false;
+    hitStunTimer = 0;
+    isSuperMoveActive = false;
+    currentState = MAKOTO_WIN;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(MAKOTO_WIN);
+    if (maxFrame < 1) maxFrame = 1;
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateScaledHurtbox();
+}
+
+void Makoto::BeginDefeatPose() {
+    isHit = false;
+    hitStunTimer = 0;
+    isSuperMoveActive = false;
+    currentState = MAKOTO_LOSE;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(MAKOTO_LOSE);
+    if (maxFrame < 1) maxFrame = 1;
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateScaledHurtbox();
+}
+
+bool Makoto::IsPlayingResultPose() const {
+    return currentState == MAKOTO_WIN ||
+        currentState == THANATOS_WIN ||
+        currentState == MAKOTO_LOSE;
+}
+
+bool Makoto::IsInCombatAction() const {
+    if (IsAttacking()) return true;
+    switch (currentState) {
+    case JUMP: case DASH: case NEUTRAL_AIR: case UP_AIR: case SIDE_AIR: case DOWN_AIR:
+    case SUMMON_1: case SUMMON_2: case SUMMON_AIR: case SUMMON_AIR_2:
+    case SUMMON_1_ORPHEUS: case SUMMON_2_JACKFROST:
+    case SUMMON_AIR_MAZIODYNE: case SUMMON_AIR_MESSIAH: case THANATOS_SLASH:
+    case DODGE_FORWARD: case DODGE_BACKWARD:
+        return true;
+    default:
+        return isSuperMoveActive;
+    }
 }
 
 static bool LoadMakotoTexture(MakotoTexture& tex, const char* path, int frameCount) {

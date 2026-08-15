@@ -92,12 +92,57 @@ bool InputManager::IsKeyDown(int directInputKey) const {
     return (keyState[directInputKey] & 0x80) != 0;
 }
 
+static bool g_AiInputEnabled = false;
+static BYTE g_AiKeys[256] = {};
+static bool g_AiMouseLeftDown = false;
+
+void BeginAiInput() { g_AiInputEnabled = true; }
+void EndAiInput() { g_AiInputEnabled = false; }
+bool IsAiInputEnabled() { return g_AiInputEnabled; }
+
+void ClearAiInput() {
+    ZeroMemory(g_AiKeys, sizeof(g_AiKeys));
+    g_AiMouseLeftDown = false;
+}
+
+void SetAiKeyDown(int directInputKey, bool down) {
+    if (directInputKey < 0 || directInputKey >= 256) return;
+    g_AiKeys[directInputKey] = down ? 0x80 : 0;
+}
+
+void SetAiMouseLeftDown(bool down) {
+    g_AiMouseLeftDown = down;
+}
+
 bool IsGameKeyDown(int directInputKey) {
-    return g_WindowHasFocus && g_InputManager.IsKeyDown(directInputKey);
+    // Freeze combat input outside the active fight window (countdown / KO / result).
+    if (!IsBattleInputAllowed()) {
+        if (g_AiInputEnabled && directInputKey >= 0 && directInputKey < 256) {
+            return (g_AiKeys[directInputKey] & 0x80) != 0;
+        }
+        return false;
+    }
+    // While CPU is driving input, ignore the human keyboard so P2 does not mirror P1 skills.
+    if (g_AiInputEnabled) {
+        if (directInputKey < 0 || directInputKey >= 256) return false;
+        return (g_AiKeys[directInputKey] & 0x80) != 0;
+    }
+    if (g_WindowHasFocus && g_InputManager.IsKeyDown(directInputKey)) return true;
+    return false;
 }
 
 bool IsGameMouseDown(int virtualKey) {
-    return g_WindowHasFocus && (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    if (!IsBattleInputAllowed()) {
+        if (g_AiInputEnabled) {
+            return virtualKey == VK_LBUTTON && g_AiMouseLeftDown;
+        }
+        return false;
+    }
+    if (g_AiInputEnabled) {
+        return virtualKey == VK_LBUTTON && g_AiMouseLeftDown;
+    }
+    if (g_WindowHasFocus && (GetAsyncKeyState(virtualKey) & 0x8000) != 0) return true;
+    return false;
 }
 
 static void ApplyMenuCursorState() {

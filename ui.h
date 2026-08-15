@@ -21,3 +21,6 @@ void DrawBattleHud(
     int p2MaxSp,
     float p2Stamina,
     float p2MaxStamina);
+void DrawBattleRoundOverlay();
+void DrawBattleTimerOverlay();
+void DrawBattleFadeOverlay(LPD3DXSPRITE sprite);

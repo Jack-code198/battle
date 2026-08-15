@@ -1,21 +1,28 @@
 #include "Fighter.h"
+#include "../game_logic.h"
 
 Fighter::Fighter()
     : characterId(Char_Makoto)
     , playerSlot(0)
     , humanControlled(true)
     , physicsBody()
+    , aiAttackCooldown(0)
+    , aiJumpCooldown(0)
+    , aiAttackPulse(0)
+    , aiAttackMode(0)
+    , skillEndHold(0)
     , facingDirection(1)
     , health(MAKOTO_MAX_HEALTH)
     , maxHealth(MAKOTO_MAX_HEALTH)
-    , sp(FIGHTER_MAX_SP)
+    , sp(0)
     , maxSp(FIGHTER_MAX_SP)
     , stamina(FIGHTER_MAX_STAMINA)
     , maxStamina(FIGHTER_MAX_STAMINA)
     , isHit(false)
     , hitStunTimer(0)
     , isDead(false)
-    , velocity(JOKER_MOVE_SPEED) {
+    , velocity(JOKER_MOVE_SPEED)
+    , spriteTint(D3DCOLOR_XRGB(255, 255, 255)) {
     position = D3DXVECTOR3(0, 0, 0);
     hurtbox = { 0, 0, 0, 0 };
     physicsBody.mass = 1.0f;
@@ -58,8 +65,29 @@ void Fighter::UpdateScaledHurtbox() {
     hurtbox.y = position.y - hurtbox.height;
 }
 
+void Fighter::TryApplyHorizontalDelta(float deltaX) {
+    if (deltaX == 0.0f) return;
+
+    Fighter* opponent = GetOpponent(*this);
+    if (!opponent || opponent->IsDead()) {
+        position.x += deltaX;
+        return;
+    }
+
+    float remaining = deltaX;
+    while (fabsf(remaining) > 0.001f) {
+        const float step = (fabsf(remaining) > BODY_MOVE_SUBSTEP)
+            ? (remaining > 0.0f ? BODY_MOVE_SUBSTEP : -BODY_MOVE_SUBSTEP)
+            : remaining;
+        position.x += step;
+        ClampFighterAgainstOpponent(*this, *opponent);
+        remaining -= step;
+    }
+}
+
 bool Fighter::TryConsumeSp(int cost) {
     if (cost <= 0) return true;
+    if (IsTutorialBattleMode() && humanControlled) return true;
     if (sp < cost) return false;
     sp -= cost;
     return true;
@@ -121,4 +149,18 @@ void Fighter::ApplySlotSpawnDefaults() {
         position = D3DXVECTOR3(JOKER_SPAWN_X, CHARACTER_GROUND_Y, 0);
         facingDirection = -1;
     }
+}
+
+D3DCOLOR Fighter::ApplySpriteTint(D3DCOLOR base, D3DCOLOR tint) {
+    if (tint == D3DCOLOR_XRGB(255, 255, 255)) return base;
+    const int br = (base >> 16) & 0xFF;
+    const int bg = (base >> 8) & 0xFF;
+    const int bb = base & 0xFF;
+    const int tr = (tint >> 16) & 0xFF;
+    const int tg = (tint >> 8) & 0xFF;
+    const int tb = tint & 0xFF;
+    return D3DCOLOR_XRGB(
+        (br * tr) / 255,
+        (bg * tg) / 255,
+        (bb * tb) / 255);
 }

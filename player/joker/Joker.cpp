@@ -1,11 +1,13 @@
 #include "Joker.h"
 #include "JokerAssets.h"
+#include "../../ai.h"
 #include "../../config.h"
 #include "../../renderer.h"
 #include "../../ui.h"
 #include "../../game_logic.h"
 #include "../../input.h"
 #include <cmath>
+#include <optional>
 #include <stdio.h>
 
 extern AttackData attackHitbox;
@@ -247,7 +249,7 @@ Joker::Joker()
 }
 
 void Joker::TryTrainingHeal() {
-    if (!TRAINING_MODE || health >= maxHealth || isHit) return;
+    if (!IsTutorialBattleMode() || health >= maxHealth || isHit) return;
 
     trainingIdleFrames++;
     if (trainingIdleFrames < TRAINING_HEAL_IDLE_FRAMES) return;
@@ -267,13 +269,7 @@ void Joker::UpdateHurtbox() {
 }
 
 AABB Joker::GetBodyCollisionBox() const {
-    float s = GetJokerDrawScale();
-    AABB box;
-    box.width = JOKER_PUSHBOX_WIDTH * s;
-    box.height = JOKER_PUSHBOX_HEIGHT * s;
-    box.x = position.x - box.width * 0.5f;
-    box.y = position.y - box.height;
-    return box;
+    return MakeLivePushbox(position, JOKER_PUSHBOX_WIDTH, JOKER_PUSHBOX_HEIGHT, GetJokerDrawScale());
 }
 
 void Joker::UpdateScaledHurtbox() {
@@ -352,6 +348,13 @@ void Joker::EnterActionState(int state) {
 void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
     if (!IsSkillState(currentState) || enemy.isDead) return;
 
+    // All-out / persona skills yank the foe in for the cinematic hit.
+    if (IsAllOutPhase(currentState) ||
+        currentState == JOKER_EIHA ||
+        currentState == JOKER_EIGAON) {
+        PullEnemyForUltimate(*this, enemy, !skillHit && !enemy.IsHit());
+    }
+
     const AABB& hb = enemy.GetHurtbox();
     // Makoto GetAgiMabufuPos: effect feet sit on enemy hurtbox center.
     skillEffectPos = D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.5f, 0.0f);
@@ -363,11 +366,20 @@ void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
         : (set.arseneEffect.texture ? set.arseneEffect.maxFrame : maxFrame);
     if (effectMax < 1) return;
 
+    const int effectTicks =
+        (currentState == JOKER_EIHA || currentState == JOKER_EIGAON)
+        ? LASER_EFFECT_ANIM_DELAY
+        : PERSONA_EFFECT_ANIM_DELAY;
+
     skillEffectAccum += steps;
-    while (skillEffectAccum >= PERSONA_EFFECT_ANIM_DELAY) {
-        skillEffectAccum -= PERSONA_EFFECT_ANIM_DELAY;
+    while (skillEffectAccum >= effectTicks) {
+        skillEffectAccum -= effectTicks;
         if (skillEffectFrame < effectMax - 1) {
             skillEffectFrame++;
+            skillEndHold = 0;
+        }
+        else {
+            skillEndHold += effectTicks;
         }
     }
 
@@ -420,7 +432,10 @@ void Joker::BeginHitReaction(float knockbackX) {
     damageGroundHold = 0;
     isReturningToPosition = false;
 
-    position.x += knockbackX;
+    TryApplyHorizontalDelta(knockbackX);
+    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
+        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    }
     ClampPosition();
     UpdateHurtbox();
 }
@@ -444,13 +459,11 @@ void Joker::BeginRecover() {
 }
 
 void Joker::FinishRecoverToStance() {
-    shouldReturnToOriginal = true;
-    isReturningToPosition = true;
     trainingIdleFrames = 0;
     idleWaitFrames = 0;
 
     if (!IsHumanControlled()) {
-        position = originalPosition;
+        // CPU AI: stay at knockdown position (no sandbag spawn snap).
         isReturningToPosition = false;
         shouldReturnToOriginal = false;
         EnterStance();
@@ -458,6 +471,8 @@ void Joker::FinishRecoverToStance() {
         return;
     }
 
+    shouldReturnToOriginal = true;
+    isReturningToPosition = true;
     EnterStance();
     UpdateHurtbox();
 }
@@ -488,7 +503,7 @@ void Joker::ReturnToOriginalPosition() {
         position.x = originalPosition.x;
     }
     else {
-        position.x += (dx > 0.0f) ? speed : -speed;
+        TryApplyHorizontalDelta((dx > 0.0f) ? speed : -speed);
     }
     position.y = originalPosition.y;
 
@@ -618,6 +633,7 @@ void Joker::UpdateSandbag(int steps) {
             damageGroundHold = 0;
         }
 
+        ApplyGravity(steps);
         stunTimer += steps;
         maxFrame = g_JokerAnims[JOKER_ANIM_DAMAGE].joker.maxFrame;
         if (maxFrame < 1) maxFrame = 1;
@@ -626,7 +642,13 @@ void Joker::UpdateSandbag(int steps) {
             AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
             damageGroundHold = 0;
         }
+        else if (!IsOnGround()) {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
+        }
         else {
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
             damageGroundHold += steps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginRecover();
@@ -685,7 +707,6 @@ void Joker::UpdateSandbag(int steps) {
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_IDLE_ANIM_TICKS, maxFrame)) {
             EnterStance();
         }
-        TryTrainingHeal();
         UpdateHurtbox();
         return;
     }
@@ -700,8 +721,6 @@ void Joker::UpdateSandbag(int steps) {
         if (idleWaitFrames >= IDLE_THRESHOLD_FRAMES) {
             EnterIdle();
         }
-
-        TryTrainingHeal();
     }
 
     UpdateHurtbox();
@@ -750,7 +769,7 @@ void Joker::UpdateHuman(int steps) {
         currentState == JOKER_GUARD_AIR;
 
     if (allowsMove && isMoving && IsOnGround()) {
-        position.x += moveDirX * currentVelocity * steps;
+        TryApplyHorizontalDelta(moveDirX * currentVelocity * steps);
         ClampPosition();
     }
 
@@ -784,12 +803,19 @@ void Joker::UpdateHuman(int steps) {
         if (currentState != JOKER_DAMAGE) {
             BeginHitReaction(0.0f);
         }
+        ApplyGravity(steps);
         maxFrame = GetMaxFrameForState(JOKER_DAMAGE);
         if (currentFrame < maxFrame - 1) {
             AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
             damageGroundHold = 0;
         }
+        else if (!IsOnGround()) {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
+        }
         else {
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
             damageGroundHold += steps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginRecover();
@@ -844,7 +870,7 @@ void Joker::UpdateHuman(int steps) {
 
     if (currentState == JOKER_DODGE || currentState == JOKER_LEDGEROLL) {
         const float slide = (dodgeForward ? 1.0f : -1.0f) * (float)facingDirection;
-        position.x += slide * (velocity * DODGE_SLIDE_SPEED) * steps;
+        TryApplyHorizontalDelta(slide * (velocity * DODGE_SLIDE_SPEED) * steps);
         ClampPosition();
         maxFrame = GetMaxFrameForState(currentState);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {
@@ -855,7 +881,7 @@ void Joker::UpdateHuman(int steps) {
     }
 
     if (currentState == JOKER_DASH) {
-        position.x += (float)facingDirection * (velocity * MAKOTO_DASH_SPEED_MULTIPLIER) * steps;
+        TryApplyHorizontalDelta((float)facingDirection * (velocity * MAKOTO_DASH_SPEED_MULTIPLIER) * steps);
         ClampPosition();
         maxFrame = GetMaxFrameForState(JOKER_DASH);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_ACTION_TICKS, maxFrame)) {
@@ -914,7 +940,7 @@ void Joker::UpdateHuman(int steps) {
             return;
         }
 
-        position.x += jumpHorizontalSpeed * steps;
+        TryApplyHorizontalDelta(jumpHorizontalSpeed * steps);
         ClampPosition();
         ApplyGravity(steps);
 
@@ -1004,6 +1030,7 @@ void Joker::UpdateHuman(int steps) {
         }
         else if (IsAllOutPhase(currentState)) {
             ticks = JOKER_ALL_OUT_TICKS;
+            PullEnemyForUltimate(*this, *opponent, !skillHit && !opponent->IsHit());
         }
         else if (IsSkillState(currentState) || currentState == JOKER_EIHA || currentState == JOKER_EIGAON) {
             ticks = JOKER_SKILL_TICKS;
@@ -1114,6 +1141,10 @@ void Joker::UpdateHuman(int steps) {
     else if (isAllOutPressed) {
         // 5 → all-out_attack → member → effect(hit) → finish
         nextState = JOKER_ALL_OUT_ATTACK;
+        skillEndHold = 0;
+        if (Fighter* foe = GetOpponent(*this)) {
+            PullEnemyForUltimate(*this, *foe, true);
+        }
     }
     else if (isTauntPressed) {
         nextState = JOKER_TAUNT;
@@ -1213,7 +1244,7 @@ void Joker::UpdateHuman(int steps) {
 }
 
 void Joker::Update() {
-    if (isDead) return;
+    if (isDead && !IsPlayingResultPose()) return;
 
     int steps = 0;
     if (OwnsFrameTimer()) {
@@ -1225,11 +1256,35 @@ void Joker::Update() {
     if (steps <= 0) return;
     if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
-    if (!IsHumanControlled()) {
+    if (IsPlayingResultPose()) {
+        const int animSteps = 1;
+        maxFrame = GetMaxFrameForState(currentState);
+        if (maxFrame < 1) maxFrame = 1;
+        if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+        }
+        else {
+            currentFrame = maxFrame - 1;
+        }
+        UpdateHurtbox();
+        return;
+    }
+
+    if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
         return;
     }
 
+    if (!IsHumanControlled() && IsCpuLockedInReaction(*this, currentState)) {
+        UpdateSandbag(steps);
+        return;
+    }
+
+    std::optional<AiInputScope> aiInputScope;
+    if (!IsHumanControlled()) {
+        aiInputScope.emplace();
+        DriveSimpleAi(*this);
+    }
     UpdateHuman(steps);
 }
 
@@ -1243,7 +1298,7 @@ void Joker::TakeDamage(int damage) {
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (!TRAINING_MODE && health <= 0) isDead = true;
+        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) isDead = true;
         return;
     }
 
@@ -1253,7 +1308,7 @@ void Joker::TakeDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
     }
 }
@@ -1267,6 +1322,7 @@ void Joker::ApplySkillDamage(int damage) {
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
+        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) isDead = true;
         return;
     }
 
@@ -1276,8 +1332,60 @@ void Joker::ApplySkillDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
+    }
+}
+
+bool Joker::IsSuperMoveActive() const {
+    return IsAllOutPhase(currentState) ||
+        currentState == JOKER_EIHA ||
+        currentState == JOKER_EIGAON ||
+        currentState == JOKER_NEUTRAL_SPECIAL ||
+        currentState == JOKER_NEUTRAL_AIR_SPECIAL ||
+        currentState == JOKER_PERSONA_SUMMON ||
+        currentState == JOKER_PERSONA_RETURN;
+}
+
+D3DCOLOR Joker::GetOverlayColor() const {
+    if (!IsSuperMoveActive()) return 0;
+    return D3DCOLOR_ARGB(220, 0, 0, 0);
+}
+
+void Joker::BeginVictoryPose() {
+    isHit = false;
+    isStunned = false;
+    isDamageAnimating = false;
+    EnterActionState(JOKER_WIN);
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateHurtbox();
+}
+
+void Joker::BeginDefeatPose() {
+    isHit = false;
+    isStunned = false;
+    isDamageAnimating = false;
+    EnterActionState(JOKER_LOSE);
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateHurtbox();
+}
+
+bool Joker::IsPlayingResultPose() const {
+    return currentState == JOKER_WIN || currentState == JOKER_LOSE;
+}
+
+bool Joker::IsInCombatAction() const {
+    if (IsMeleeAttackState(currentState) || IsSkillState(currentState) || IsAllOutPhase(currentState)) {
+        return true;
+    }
+    switch (currentState) {
+    case JOKER_JUMP: case JOKER_DASH: case JOKER_DODGE: case JOKER_LEDGEROLL:
+    case JOKER_PERSONA_SUMMON: case JOKER_PERSONA_RETURN:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -1285,7 +1393,7 @@ void Joker::Reset() {
     ApplySlotSpawnDefaults();
     originalPosition = position;
     health = maxHealth;
-    sp = maxSp;
+    sp = 0;
     RefillStamina();
     isDead = false;
     isActive = true;
@@ -1427,9 +1535,10 @@ void Joker::Render(LPD3DXSPRITE sprite) {
     const bool showDamageTint =
         currentState == JOKER_DAMAGE ||
         isHit;
-    D3DCOLOR color = showDamageTint
+    const D3DCOLOR baseColor = showDamageTint
         ? D3DCOLOR_XRGB(255, 100, 100)
         : D3DCOLOR_XRGB(255, 255, 255);
+    D3DCOLOR color = ApplySpriteTint(baseColor, GetSpriteTint());
     int bodyFrame = currentFrame;
     if (set.joker.maxFrame > 0) {
         if (bodyFrame < 0) bodyFrame = 0;
