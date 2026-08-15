@@ -29,7 +29,7 @@ inline constexpr float MAKOTO_BODY_HEIGHT = 56.0f;
 inline constexpr float MAKOTO_FEET_Y = 56.0f;
 // Shared sole row for crouch hold + crouch attack (measured from sheets).
 inline constexpr float MAKOTO_CROUCH_FEET_Y = 42.0f;
-inline constexpr float MAKOTO_BODY_WIDTH = 22.0f;
+inline constexpr float MAKOTO_BODY_WIDTH = 26.0f;
 inline constexpr float MAKOTO_BODY_CENTER_X = 11.0f;
 inline constexpr float MAKOTO_WINDOW_MARGIN = 12.0f;
 inline constexpr float MAKOTO_SPAWN_FORWARD = 200.0f;
@@ -47,7 +47,7 @@ inline constexpr float MEGIDOLAON_REFERENCE_HEIGHT = 176.0f;
 inline constexpr float THANATOS_MAZIODYNE_FORWARD_OFFSET = 50.0f;
 inline constexpr float THANATOS_MAZIODYNE_VERTICAL_OFFSET = 350.0f;
 inline constexpr float MAZIODYNE_HORIZONTAL_OFFSET = 50.0f;
-inline constexpr float MAZIODYNE_VERTICAL_OFFSET = 80.0f;
+inline constexpr float MAZIODYNE_VERTICAL_OFFSET = 35.0f;
 inline constexpr float PERSONA_BEHIND_HORIZONTAL = 90.0f;
 inline constexpr float ORPHEUS_BEHIND_HORIZONTAL = 145.0f;
 inline constexpr float JACKFROST_BEHIND_VERTICAL = 110.0f;
@@ -76,7 +76,7 @@ inline constexpr int JOKER_IDLE_WAIT_FRAMES = 600;
 inline constexpr float JOKER_BODY_WIDTH = 22.0f;
 inline constexpr float JOKER_HURTBOX_WIDTH = 26.0f;
 inline constexpr float JOKER_HURTBOX_HEIGHT = 56.0f;
-inline constexpr float JOKER_PUSHBOX_WIDTH = 20.0f;
+inline constexpr float JOKER_PUSHBOX_WIDTH = 26.0f;
 inline constexpr float JOKER_PUSHBOX_HEIGHT = 52.0f;
 
 // Default fighter hurtbox in unscaled body units (scaled by GetCharacterRenderScale()).
@@ -87,8 +87,9 @@ inline constexpr float DEFAULT_HURTBOX_HEIGHT = 110.0f;
 // Movement speeds (pixels per logic step before facing direction).
 inline constexpr int MAKOTO_MOVE_SPEED = 6;
 inline constexpr int NARUKAMI_MOVE_SPEED = 6;
-inline constexpr float NARUKAMI_PUSHBOX_WIDTH = 22.0f;
-inline constexpr float NARUKAMI_PUSHBOX_HEIGHT = 52.0f;
+// Same units as MAKOTO_BODY_WIDTH (scaled by GetMakotoDrawScale() — Narukami draw uses that).
+inline constexpr float NARUKAMI_PUSHBOX_WIDTH = 36.0f;
+inline constexpr float NARUKAMI_PUSHBOX_HEIGHT = MAKOTO_BODY_HEIGHT;
 inline constexpr int JOKER_MOVE_SPEED = 6;
 inline constexpr float MAKOTO_DASH_SPEED_MULTIPLIER = 3.5f;
 
@@ -99,17 +100,37 @@ inline constexpr float JOKER_MIN_SCREEN_Y = 200.0f;
 // Ground contact tolerances (shared physics snap).
 inline constexpr float GROUND_CONTACT_EPSILON = 0.5f;
 inline constexpr float GROUND_NEAR_EPSILON = 2.0f;
+inline constexpr float BODY_COLLISION_EPSILON = 0.5f;
+inline constexpr float BODY_MOVE_SUBSTEP = 10.0f;
 
 // Shared jump / air-control (negative Y = up on screen).
 inline constexpr float FIGHTER_JUMP_VELOCITY = -14.0f;
 inline constexpr float FIGHTER_AIR_CONTROL_MULTIPLIER = 1.5f;
 inline constexpr float NARUKAMI_AIR_CONTROL_MULTIPLIER = 1.2f;
 inline constexpr int NARUKAMI_CROSS_SLASH_TICKS = 6;
-inline constexpr int NARUKAMI_MYRIAD_SUMMON_TICKS = 7;
+inline constexpr int NARUKAMI_MYRIAD_SUMMON_TICKS = 16;
+inline constexpr int NARUKAMI_MYRIAD_PERSONA_TICKS = 12;
+inline constexpr int NARUKAMI_MYRIAD_RIPPLE_MAX_STEPS = 150;
+inline constexpr int NARUKAMI_MYRIAD_RIPPLE_END_HOLD_STEPS = 28;
+inline constexpr float NARUKAMI_MYRIAD_RIPPLE_VERTICAL = 0.0f;
+inline constexpr float NARUKAMI_MYRIAD_IZANAGI_HEAD_GAP = 28.0f;
+inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_START = 28.0f;
+inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_GROWTH = 11.0f;
+inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_SCALE = 42.0f;
 inline constexpr int NARUKAMI_HIT_STUN_FRAMES = 20;
 // Game loop / frame-timer clamps (named — do not hardcode Sleep/step caps in main).
 inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 8;
 inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 4;
+
+// Simple P2 CPU AI (distances in screen pixels; cooldowns in update steps).
+inline constexpr float AI_ATTACK_RANGE = 78.0f;
+inline constexpr float AI_ENGAGE_RANGE = 160.0f;
+inline constexpr float AI_RUN_RANGE = 220.0f;
+inline constexpr int AI_ATTACK_COOLDOWN_STEPS = 48;
+inline constexpr int AI_ATTACK_PULSE_STEPS = 4;
+inline constexpr int AI_JUMP_COOLDOWN_STEPS = 90;
+inline constexpr int AI_SIDE_ATTACK_CHANCE_PERCENT = 12;
+inline constexpr int AI_JUMP_CHANCE_PERCENT = 10;
 
 // Measured recover / air-lift offsets (from sprite feet rows — do not guess).
 inline constexpr float MAKOTO_RECOVER_FEET_Y = 32.0f;
@@ -135,6 +156,24 @@ inline constexpr float GAME_OVER_TITLE_Y = 280.0f;
 inline constexpr float GAME_OVER_HINT_X = 300.0f;
 inline constexpr float GAME_OVER_HINT_Y = 340.0f;
 
+// Round flow timing (logic steps @ ~60Hz).
+inline constexpr int BATTLE_COUNTDOWN_DIGIT_STEPS = 55;
+inline constexpr int BATTLE_COUNTDOWN_FIGHT_STEPS = 40;
+inline constexpr int BATTLE_KO_HOLD_STEPS = 70;
+inline constexpr int BATTLE_RESULT_POSE_MIN_STEPS = 240;
+inline constexpr int BATTLE_FADE_OUT_STEPS = 150;
+inline constexpr int BATTLE_WIN_ANIM_TICKS = 10;
+inline constexpr int BATTLE_LOSE_ANIM_TICKS = 10;
+
+// Battle mode round timer (logic steps @ ~60Hz). Tutorial mode has no limit.
+inline constexpr int BATTLE_ROUND_TIME_SECONDS = 99;
+inline constexpr int BATTLE_ROUND_TIME_STEPS = BATTLE_ROUND_TIME_SECONDS * 60;
+
+// Mirror match: tint P2 so same-character fights stay readable.
+inline constexpr int MIRROR_MATCH_P2_TINT_R = 255;
+inline constexpr int MIRROR_MATCH_P2_TINT_G = 200;
+inline constexpr int MIRROR_MATCH_P2_TINT_B = 32;
+
 // Dash attack active frames / box (unscaled units; multiplied by Makoto draw scale).
 // Box is anchored ahead of Makoto's center toward facing direction.
 inline constexpr int DASH_HIT_START_FRAME = 1;
@@ -149,8 +188,10 @@ inline constexpr int DASH_HIT_DAMAGE = 28;
 // (P2 sandbag by default; any fighter can be sandbag when humanControlled is false).
 inline constexpr bool JOKER_SANDBAG_MODE = true;
 inline constexpr bool OPPONENT_SANDBAG_MODE = JOKER_SANDBAG_MODE;
-inline constexpr bool TRAINING_MODE = true;
+// Training heal / no-death. Keep false for real battle SP / damage feedback.
+inline constexpr bool TRAINING_MODE = false;
 inline constexpr int TRAINING_HEAL_IDLE_FRAMES = 45;
+inline constexpr float TUTORIAL_STAMINA_REGEN_MULTIPLIER = 12.0f;
 
 inline constexpr float OPPONENT_MELEE_KNOCKBACK = 6.0f;
 inline constexpr float OPPONENT_SKILL_KNOCKBACK = 0.0f;
@@ -200,6 +241,26 @@ inline constexpr int INTRO_TO_STANCE_BLEND_FRAMES = 0;
 inline constexpr int INTRO_VISUAL_HOLD_FRAMES = 8;
 inline constexpr int PERSONA_ANIM_DELAY = 5;
 inline constexpr int PERSONA_EFFECT_ANIM_DELAY = 3;
+// Laser-type supers (Maziodyne / Ziodyne): slower sheet + hold last bolt for impact.
+inline constexpr int LASER_EFFECT_ANIM_DELAY = 9;
+inline constexpr int LASER_END_HOLD_FRAMES = 18;
+// Makoto Thanatos + Maziodyne: faster bolt cycle than generic laser supers.
+inline constexpr int MAZIODYNE_LASER_EFFECT_ANIM_DELAY = 5;
+inline constexpr int MAZIODYNE_LASER_END_HOLD_FRAMES = 8;
+inline constexpr int NARUKAMI_LASER_PERSONA_TICKS = 14;
+inline constexpr int NARUKAMI_LASER_END_HOLD_STEPS = 24;
+// Narukami Zio/Ziodyne: Izanagi in front of Yu (normal scale) + bolt like Thanatos/Maziodyne.
+inline constexpr float NARUKAMI_IZANAGI_SPRAY_FORWARD = 108.0f;
+inline constexpr float NARUKAMI_IZANAGI_SPRAY_VERTICAL = 95.0f;
+inline constexpr float NARUKAMI_ZIO_HIT_BODY_Y_RATIO = 0.78f;
+// Ziodyne beam anchor: pulled back from foe toward Yu (same idea as MAZIODYNE_*).
+inline constexpr float NARUKAMI_ZIODYNE_HORIZONTAL_OFFSET = 50.0f;
+// Ziodyne art sits high in the cell — push the feet anchor down to torso center.
+inline constexpr float NARUKAMI_ZIODYNE_VERTICAL_OFFSET = 52.0f;
+inline constexpr float ULTIMATE_PULL_LERP = 0.42f;
+inline constexpr float ULTIMATE_PULL_SCREEN_MARGIN = 48.0f;
+// Brief upward pop on skill knockdown so gravity visibly drops them.
+inline constexpr float FIGHTER_DAMAGE_POP_VELOCITY = -6.5f;
 inline constexpr int THANATOS_SLASH_ANIM_DELAY = 4;
 inline constexpr int PERSONA_STANCE_ANIM_TICKS = 6;
 inline constexpr int MAKOTO_INTRO_TICKS = 10;
@@ -328,6 +389,12 @@ inline float GetMakotoScreenHalfWidth() {
     return MAKOTO_BODY_WIDTH * 0.5f * GetMakotoDrawScale();
 }
 
+// Default P1↔P2 center distance at round start (used by ultimate pull-in).
+inline float GetDefaultBattleCenterGap() {
+    const float p1SpawnX = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + MAKOTO_SPAWN_FORWARD;
+    return OPPONENT_SPAWN_X - p1SpawnX;
+}
+
 inline float GetJokerScreenHalfWidth() {
     return JOKER_PUSHBOX_WIDTH * 0.5f * GetJokerDrawScale();
 }
@@ -345,6 +412,16 @@ inline void ClampMakotoCenterX(float& centerX) {
 
 inline void ClampJokerCenterX(float& centerX) {
     ClampFighterCenterX(centerX, GetJokerScreenHalfWidth());
+}
+
+// Live pushbox from current feet position — same math Makoto / Joker use.
+inline AABB MakeLivePushbox(const D3DXVECTOR3& pos, float bodyWidth, float bodyHeight, float drawScale) {
+    AABB box;
+    box.width = bodyWidth * drawScale;
+    box.height = bodyHeight * drawScale;
+    box.x = pos.x - box.width * 0.5f;
+    box.y = pos.y - box.height;
+    return box;
 }
 
 inline float GetEffectRenderScale() {
@@ -650,6 +727,7 @@ inline constexpr float ATK_DOWN_WIDTH = 40.0f;
 inline constexpr float ATK_DOWN_HEIGHT = 32.0f;
 
 void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DCOLOR color);
+void DrawDebugCircleRing(LPD3DXSPRITE sprite, float cx, float cy, float radius, D3DCOLOR color, int segments = 48);
 
 // Shared melee AttackData instances (defined in main.cpp).
 extern AttackData attackHitbox;

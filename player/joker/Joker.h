@@ -116,7 +116,15 @@ public:
     void ApplySkillDamage(int damage) override;
     void Reset() override;
 
+    void BeginVictoryPose() override;
+    void BeginDefeatPose() override;
+    bool IsPlayingResultPose() const override;
+    bool IsInCombatAction() const override;
+
     void RenderDebugHitbox(LPD3DXSPRITE sprite) override;
+
+    bool IsSuperMoveActive() const override;
+    D3DCOLOR GetOverlayColor() const override;
 
     AABB GetHurtbox();
     AABB GetBodyCollisionBox() const override;

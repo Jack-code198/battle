@@ -139,11 +139,15 @@ static void RenderGameOverScreen() {
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
         if (g_FontRenderer.IsReady()) {
+            const char* title = g_BattlePlayer1Won ? "WIN" : "LOSE";
+            const D3DCOLOR titleColor = g_BattlePlayer1Won
+                ? D3DCOLOR_XRGB(255, 220, 64)
+                : D3DCOLOR_XRGB(255, 80, 80);
             g_FontRenderer.DrawTextA(
-                "GAME OVER",
+                title,
                 GAME_OVER_TITLE_X,
                 GAME_OVER_TITLE_Y,
-                D3DCOLOR_XRGB(255, 80, 80));
+                titleColor);
             g_FontRenderer.DrawTextA(
                 "R = Retry   ESC = Main Menu",
                 GAME_OVER_HINT_X,
@@ -166,13 +170,14 @@ static void StartBattleFromSelect() {
     if (g_Player1 && g_Player2) {
         ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
     }
+    ResetBattleFlow();
     SetMenuCursorEnabled(false);
     g_StateStack.Push(AppScreen::Battle);
 }
 
 static void CheckBattleGameOver() {
     if (!g_Player1 || !g_Player2) return;
-    if (g_Player1->IsDead() || g_Player2->IsDead()) {
+    if (g_BattleFlowPhase == BattleFlowPhase::Finished) {
         g_StateStack.ExecuteGameOver();
     }
 }
@@ -292,10 +297,17 @@ int main(int argc, char* argv[]) {
             SetMenuCursorEnabled(false);
             if (g_Player1) g_Player1->Update();
             if (g_Player2) g_Player2->Update();
-            // Shared body push so Joker / Narukami cannot walk through like ghosts.
-            if (g_Player1 && g_Player2) {
-                ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
+            {
+                int tutorialSteps = g_GameTimer.GetLastFramesToUpdate();
+                if (tutorialSteps <= 0) tutorialSteps = 1;
+                ApplyTutorialModePerks(tutorialSteps);
             }
+            if (g_Player1 && g_Player2) {
+                EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
+                ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
+                EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
+            }
+            UpdateBattleFlow();
             Render();
             CheckBattleGameOver();
 
@@ -312,7 +324,7 @@ int main(int argc, char* argv[]) {
             break;
         }
         case AppScreen::GameOver: {
-            // Game over execute — FontRenderer draws the overlay.
+            // Result screen — WIN if P1 won, LOSE if P1 lost.
             RenderGameOverScreen();
 
             const bool retryPressed = (diKeys[DIK_R] & 0x80) != 0;
@@ -323,6 +335,7 @@ int main(int argc, char* argv[]) {
                 if (g_Player1 && g_Player2) {
                     ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
                 }
+                ResetBattleFlow();
                 g_StateStack.RetryFromGameOver();
             }
             else if (escPressed && !g_BattleEscHeld) {

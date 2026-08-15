@@ -18,7 +18,8 @@ enum MakotoState {
     THANATOS_SLASH,
     SUMMON_AIR_MESSIAH,
     MAKOTO_WIN,
-    THANATOS_WIN
+    THANATOS_WIN,
+    MAKOTO_LOSE
 };
 
 class Makoto : public Fighter {
@@ -117,6 +118,11 @@ public:
     void Render(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
     void Reset() override;
+
+    void BeginVictoryPose() override;
+    void BeginDefeatPose() override;
+    bool IsPlayingResultPose() const override;
+    bool IsInCombatAction() const override;
 
     int GetCurrentState() const { return currentState; }
     int GetCurrentFrame() const { return currentFrame; }

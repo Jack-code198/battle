@@ -204,6 +204,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClCompile Include="FrameTimer.cpp" />
     <ClCompile Include="game_logic.cpp" />
     <ClCompile Include="input.cpp" />
+    <ClCompile Include="ai.cpp" />
     <ClCompile Include="FontRenderer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="renderer.cpp" />
@@ -226,6 +227,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClInclude Include="FrameTimer.h" />
     <ClInclude Include="game_logic.h" />
     <ClInclude Include="input.h" />
+    <ClInclude Include="ai.h" />
     <ClInclude Include="renderer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

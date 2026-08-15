@@ -1,9 +1,11 @@
 #include "Narukami.h"
+#include "../../ai.h"
 #include "../../config.h"
 #include "../../renderer.h"
 #include "../../game_logic.h"
 #include "../../input.h"
 #include <cmath>
+#include <optional>
 #include <stdio.h>
 
 extern AttackData attackHitbox;
@@ -74,6 +76,7 @@ NarukamiTexture g_DownAttack;
 NarukamiTexture g_AirAttack;
 NarukamiTexture g_Damage;
 NarukamiTexture g_Recover;
+NarukamiTexture g_Win;
 NarukamiTexture g_Intro;
 NarukamiTexture g_IntroEffect;
 NarukamiTexture g_Taunt;
@@ -136,6 +139,65 @@ void SetFrameRect(RECT& rect, const NarukamiTexture& tex, int frameIndex) {
     rect.bottom = rect.top + NARUKAMI_CELL_SIZE;
 }
 
+static int GetSkillFacingDirection(const D3DXVECTOR3& selfPos, const D3DXVECTOR3& enemyCenter) {
+    return (enemyCenter.x >= selfPos.x) ? 1 : -1;
+}
+
+static D3DXVECTOR3 GetNarukamiFrontIzanagiPos(const D3DXVECTOR3& narukamiPos, int facingDirection) {
+    return D3DXVECTOR3(
+        narukamiPos.x + (float)facingDirection * NARUKAMI_IZANAGI_SPRAY_FORWARD,
+        narukamiPos.y - NARUKAMI_IZANAGI_SPRAY_VERTICAL,
+        0.0f);
+}
+
+static D3DXVECTOR3 GetNarukamiZioHitPos(const Fighter& enemy) {
+    const AABB& hb = enemy.GetHurtbox();
+    return D3DXVECTOR3(
+        hb.x + hb.width * 0.5f,
+        hb.y + hb.height * NARUKAMI_ZIO_HIT_BODY_Y_RATIO,
+        0.0f);
+}
+
+static D3DXVECTOR3 GetNarukamiMyriadIzanagiPos(const D3DXVECTOR3& narukamiPos) {
+    const float bodyScreenH = (float)SCREEN_HEIGHT * MAKOTO_SCREEN_HEIGHT_RATIO;
+    return D3DXVECTOR3(
+        narukamiPos.x,
+        narukamiPos.y - bodyScreenH - NARUKAMI_MYRIAD_IZANAGI_HEAD_GAP,
+        0.0f);
+}
+
+static D3DXVECTOR3 GetNarukamiZiodynePos(
+    const D3DXVECTOR3& enemyCenter,
+    int skillFacing) {
+    return D3DXVECTOR3(
+        enemyCenter.x - (float)skillFacing * NARUKAMI_ZIODYNE_HORIZONTAL_OFFSET,
+        enemyCenter.y + NARUKAMI_ZIODYNE_VERTICAL_OFFSET,
+        0.0f);
+}
+
+static void DrawNarukamiZiodyneEffect(
+    LPD3DXSPRITE sprite,
+    const D3DXVECTOR3& pos,
+    int skillFacing,
+    int frame,
+    D3DCOLOR color)
+{
+    const NarukamiTexture& effectTex = g_ZiodyneEffect;
+    if (!sprite || !effectTex.texture) return;
+
+    SetFrameRect(g_SrcRect, effectTex, frame);
+    DrawScaledCharacterSprite(
+        sprite,
+        effectTex.texture,
+        &g_SrcRect,
+        pos,
+        skillFacing,
+        PERSONA_EFFECT_SCALE,
+        color,
+        (float)MAKOTO_CELL_SIZE,
+        MAKOTO_FEET_Y);
+}
+
 const NarukamiTexture* GetTextureForState(int state) {
     switch (state) {
     case NARUKAMI_INTRO: return &g_Intro;
@@ -158,6 +220,8 @@ const NarukamiTexture* GetTextureForState(int state) {
     case NARUKAMI_NEUTRAL_AIR: return &g_AirAttack;
     case NARUKAMI_DAMAGE: return &g_Damage;
     case NARUKAMI_RECOVER: return &g_Recover;
+    case NARUKAMI_WIN: return &g_Win;
+    case NARUKAMI_LOSE: return &g_Damage;
     case NARUKAMI_TAUNT: return &g_Taunt;
     case NARUKAMI_SUMMON_ZIO: return &g_NarukamiZio;
     case NARUKAMI_SUMMON_ZIODYNE: return &g_NarukamiZiodyne;
@@ -254,6 +318,14 @@ D3DXVECTOR3 GetEnemyHurtboxCenter(const Fighter& enemy) {
     return D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.5f, 0.0f);
 }
 
+static D3DXVECTOR3 GetNarukamiMyriadRipplePos(const Fighter& enemy) {
+    const D3DXVECTOR3 enemyCenter = GetEnemyHurtboxCenter(enemy);
+    return D3DXVECTOR3(
+        enemyCenter.x,
+        enemyCenter.y - NARUKAMI_MYRIAD_RIPPLE_VERTICAL,
+        0.0f);
+}
+
 float GetNarukamiBodyFeetY(int state, int frameIndex) {
     if (state == NARUKAMI_WALK || state == NARUKAMI_RUN) {
         return NARUKAMI_RUN_FEET_Y;
@@ -299,6 +371,36 @@ void DrawCenteredLayer(
         scale,
         color,
         (float)NARUKAMI_CELL_SIZE);
+}
+
+static void DrawMyriadRippleWaves(
+    LPD3DXSPRITE sprite,
+    const D3DXVECTOR3& center,
+    int rippleStep,
+    D3DCOLOR /*tint*/)
+{
+    if (!sprite || rippleStep <= 0) return;
+
+    const float progress = (float)rippleStep / (float)NARUKAMI_MYRIAD_RIPPLE_MAX_STEPS;
+
+    for (int ring = 0; ring < 5; ++ring) {
+        const float ringT = progress - (float)ring * 0.1f;
+        if (ringT <= 0.0f || ringT > 1.0f) continue;
+
+        const float fade = 1.0f - ringT;
+        const int alpha = (int)(190.0f * fade);
+        if (alpha <= 0) continue;
+
+        const float radius =
+            NARUKAMI_MYRIAD_RIPPLE_RING_START + ringT * NARUKAMI_MYRIAD_RIPPLE_RING_GROWTH * NARUKAMI_MYRIAD_RIPPLE_RING_SCALE;
+        DrawDebugCircleRing(
+            sprite,
+            center.x,
+            center.y,
+            radius,
+            D3DCOLOR_ARGB(alpha, 255, 255, 255),
+            56);
+    }
 }
 
 void DrawLayer(
@@ -417,13 +519,12 @@ Narukami::Narukami()
 }
 
 AABB Narukami::GetBodyCollisionBox() const {
-    float s = GetCharacterRenderScale();
-    AABB box;
-    box.width = NARUKAMI_PUSHBOX_WIDTH * s;
-    box.height = NARUKAMI_PUSHBOX_HEIGHT * s;
-    box.x = position.x - box.width * 0.5f;
-    box.y = position.y - box.height;
-    return box;
+    // Same live formula as Makoto / Joker: current feet X/Y * the draw scale used by DrawLayer.
+    return MakeLivePushbox(position, NARUKAMI_PUSHBOX_WIDTH, NARUKAMI_PUSHBOX_HEIGHT, GetMakotoDrawScale());
+}
+
+void Narukami::UpdateScaledHurtbox() {
+    hurtbox = GetBodyCollisionBox();
 }
 
 bool Narukami::IsOnGround() const {
@@ -441,8 +542,8 @@ bool Narukami::IsSuperMoveActive() const {
 
 D3DCOLOR Narukami::GetOverlayColor() const {
     if (!IsSummonState(currentState)) return 0;
-    // Soft dim while persona skills play (same idea as Makoto supers).
-    return D3DCOLOR_ARGB(96, 0, 0, 0);
+    // Full black stage is handled in Render(); keep a soft tint if needed elsewhere.
+    return D3DCOLOR_ARGB(220, 0, 0, 0);
 }
 
 void Narukami::EnterState(int state) {
@@ -479,6 +580,7 @@ void Narukami::CompleteToStance() {
 void Narukami::BeginSummon(int state) {
     EnterState(state);
     skillHit = false;
+    skillEndHold = 0;
     showIzanagi = true;
     showEffect = true;
     izanagiFrame = 0;
@@ -488,6 +590,9 @@ void Narukami::BeginSummon(int state) {
         position.x - (float)facingDirection * kIzanagiBehindX,
         position.y - kIzanagiBehindY,
         0.0f);
+    if (Fighter* foe = GetOpponent(*this)) {
+        PullEnemyForUltimate(*this, *foe, true);
+    }
 }
 
 void Narukami::BeginIntroDiscard() {
@@ -528,6 +633,9 @@ void Narukami::BeginHitReaction() {
     showEffect = false;
     skillHit = false;
     idleWaitFrames = 0;
+    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
+        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    }
 }
 
 void Narukami::BeginRecover() {
@@ -544,12 +652,9 @@ void Narukami::BeginRecover() {
 }
 
 void Narukami::FinishRecover() {
-    // Sandbag: snap back to spawn after recover (Joker sandbag pattern).
-    if (!IsHumanControlled()) {
-        position = spawnPosition;
-        verticalVelocity = 0.0f;
-        jumpCount = 0;
-    }
+    // Stay at knockdown position so CPU AI can re-engage (no sandbag spawn snap).
+    verticalVelocity = 0.0f;
+    jumpCount = 0;
     isHit = false;
     hitStunTimer = 0;
     CompleteToStance();
@@ -643,22 +748,34 @@ void Narukami::CheckAttackCollision(Fighter& enemy) {
 void Narukami::UpdateSummon(int steps, Fighter& enemy) {
     const bool isZio = (currentState == NARUKAMI_SUMMON_ZIO);
     const bool isMyriad = (currentState == NARUKAMI_MYRIAD_TRUTHS);
+    const bool isLaser = !isMyriad; // Zio / Ziodyne bolt
     const NarukamiTexture& bodyTex = isMyriad ? g_MyriadTruths : (isZio ? g_NarukamiZio : g_NarukamiZiodyne);
     const NarukamiTexture& izanagiTex = isMyriad ? g_IzanagiMyriadTruths : (isZio ? g_IzanagiZio : g_IzanagiZiodyne);
     const NarukamiTexture& effectTex = isZio ? g_ZioEffect : g_ZiodyneEffect;
     const int skillDamage = isMyriad ? kMyriadTruthsDamage : (isZio ? kZioDamage : kZiodyneDamage);
 
+    // Force the foe in close for the skill framing (stop Y lock after they get hit so gravity works).
+    PullEnemyForUltimate(*this, enemy, !skillHit && !enemy.IsHit());
+
     maxFrame = bodyTex.maxFrame;
     if (maxFrame < 1) maxFrame = 1;
 
-    izanagiPos = D3DXVECTOR3(
-        position.x - (float)facingDirection * kIzanagiBehindX,
-        position.y - kIzanagiBehindY - (isMyriad ? NARUKAMI_MYRIAD_IZANAGI_LIFT_Y : 0.0f),
-        0.0f);
-    // Makoto-style: effect feet on enemy hurtbox center (not centered cell = too high).
-    {
-        const AABB& hb = enemy.GetHurtbox();
-        effectPos = D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.5f, 0.0f);
+    if (isMyriad) {
+        izanagiPos = GetNarukamiMyriadIzanagiPos(position);
+        effectPos = GetNarukamiMyriadRipplePos(enemy);
+    }
+    else if (isZio || isLaser) {
+        const D3DXVECTOR3 enemyCenter = GetEnemyHurtboxCenter(enemy);
+        const int skillFacing = GetSkillFacingDirection(position, enemyCenter);
+
+        izanagiPos = GetNarukamiFrontIzanagiPos(position, facingDirection);
+
+        if (isZio) {
+            effectPos = GetNarukamiZioHitPos(enemy);
+        }
+        else {
+            effectPos = GetNarukamiZiodynePos(enemyCenter, skillFacing);
+        }
     }
 
     // Hold last body frame until persona / effect finishes (Makoto super style).
@@ -666,7 +783,9 @@ void Narukami::UpdateSummon(int steps, Fighter& enemy) {
     const int bodyTicks = isMyriad
         ? kMyriadSummonTicks
         : NARUKAMI_ZIO_SUMMON_TICKS;
-    const int personaTicks = isMyriad ? kPersonaEffectTicks : NARUKAMI_ZIO_PERSONA_TICKS;
+    const int personaTicks = isMyriad
+        ? NARUKAMI_MYRIAD_PERSONA_TICKS
+        : NARUKAMI_LASER_PERSONA_TICKS;
     if (currentFrame < maxFrame - 1) {
         bodyDone = AdvanceOneShotFrame(animAccumulator, currentFrame, steps, bodyTicks, maxFrame);
     }
@@ -681,15 +800,29 @@ void Narukami::UpdateSummon(int steps, Fighter& enemy) {
         if (showIzanagi && izanagiTex.maxFrame > 0 && izanagiFrame < izanagiTex.maxFrame - 1) {
             izanagiFrame++;
         }
-        if (!isMyriad && showEffect && effectTex.maxFrame > 0 && effectFrame < effectTex.maxFrame - 1) {
+        if (isLaser && showEffect && effectTex.maxFrame > 0 && effectFrame < effectTex.maxFrame - 1) {
             effectFrame++;
         }
     }
 
     const bool izanagiDone = !showIzanagi || izanagiTex.maxFrame < 1 ||
         izanagiFrame >= izanagiTex.maxFrame - 1;
-    const bool effectDone = isMyriad || !showEffect || effectTex.maxFrame < 1 ||
-        effectFrame >= effectTex.maxFrame - 1;
+
+    bool effectDone = true;
+    if (isLaser && showEffect && effectTex.maxFrame > 0) {
+        if (effectFrame < effectTex.maxFrame - 1) {
+            effectDone = false;
+            skillEndHold = 0;
+        }
+        else {
+            skillEndHold += steps;
+            effectDone = skillEndHold >= NARUKAMI_LASER_END_HOLD_STEPS;
+        }
+    }
+    else if (isMyriad && showEffect) {
+        effectFrame += steps;
+        effectDone = effectFrame >= NARUKAMI_MYRIAD_RIPPLE_MAX_STEPS + NARUKAMI_MYRIAD_RIPPLE_END_HOLD_STEPS;
+    }
 
     // Guaranteed skill hit (Makoto AGI style) — body or effect active frames.
     if (!skillHit) {
@@ -758,6 +891,8 @@ void Narukami::UpdateSandbag(int steps) {
             BeginHitReaction();
         }
 
+        ApplyGravity(steps);
+
         maxFrame = GetMaxFrameForState(NARUKAMI_DAMAGE);
         if (maxFrame < 1) maxFrame = 1;
 
@@ -765,7 +900,13 @@ void Narukami::UpdateSandbag(int steps) {
             AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
             damageGroundHold = 0;
         }
+        else if (!IsOnGround()) {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
+        }
         else {
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
             damageGroundHold += steps;
             if (damageGroundHold >= kDamageGroundHoldTicks) {
                 BeginRecover();
@@ -861,7 +1002,7 @@ void Narukami::UpdateHuman(int steps) {
     int currentVelocity = isRunning ? (velocity * 2) : velocity;
 
     if (AllowsMovement(currentState) && isMoving && currentState != NARUKAMI_DASH) {
-        position.x += moveDirX * currentVelocity * steps;
+        TryApplyHorizontalDelta(moveDirX * currentVelocity * steps);
         ClampMakotoCenterX(position.x);
     }
 
@@ -971,7 +1112,7 @@ void Narukami::UpdateHuman(int steps) {
     }
 
     if (currentState == NARUKAMI_DASH) {
-        position.x += (float)facingDirection * (velocity * kDashSpeedMultiplier) * steps;
+        TryApplyHorizontalDelta((float)facingDirection * (velocity * kDashSpeedMultiplier) * steps);
         ClampMakotoCenterX(position.x);
         maxFrame = GetMaxFrameForState(NARUKAMI_DASH);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kActionTicks, maxFrame)) {
@@ -1016,7 +1157,7 @@ void Narukami::UpdateHuman(int steps) {
             jumpSpaceWasReleased = false;
         }
 
-        position.x += jumpHorizontalSpeed * steps;
+        TryApplyHorizontalDelta(jumpHorizontalSpeed * steps);
         ClampMakotoCenterX(position.x);
         ApplyGravity(steps);
 
@@ -1081,15 +1222,24 @@ void Narukami::UpdateHuman(int steps) {
     }
 
     if (currentState == NARUKAMI_DAMAGE) {
+        ApplyGravity(steps);
         maxFrame = GetMaxFrameForState(NARUKAMI_DAMAGE);
         if (currentFrame < maxFrame - 1) {
             AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
+            damageGroundHold = 0;
+        }
+        else if (!IsOnGround()) {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         else {
-            hitStunTimer -= steps;
-            if (hitStunTimer <= 0) {
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
+            damageGroundHold += steps;
+            if (damageGroundHold >= kDamageGroundHoldTicks || hitStunTimer <= 0) {
                 BeginRecover();
             }
+            hitStunTimer -= steps;
         }
         UpdateScaledHurtbox();
         return;
@@ -1144,7 +1294,6 @@ void Narukami::UpdateHuman(int steps) {
     }
     if (isKey5 && !IsSummonState(currentState) && TryConsumeSp(kSpCostMyriad)) {
         BeginSummon(NARUKAMI_MYRIAD_TRUTHS);
-        showEffect = false;
         UpdateScaledHurtbox();
         return;
     }
@@ -1273,7 +1422,7 @@ void Narukami::UpdateHuman(int steps) {
 }
 
 void Narukami::Update() {
-    if (isDead) return;
+    if (isDead && !IsPlayingResultPose()) return;
 
     int steps = 0;
     if (OwnsFrameTimer()) {
@@ -1285,53 +1434,102 @@ void Narukami::Update() {
     if (steps <= 0) return;
     if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
-    if (!IsHumanControlled()) {
+    if (IsPlayingResultPose()) {
+        const int animSteps = 1;
+        maxFrame = GetMaxFrameForState(currentState);
+        if (maxFrame < 1) maxFrame = 1;
+        if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+        }
+        else {
+            currentFrame = maxFrame - 1;
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
         return;
     }
 
+    if (!IsHumanControlled() && IsCpuLockedInReaction(*this, currentState)) {
+        UpdateSandbag(steps);
+        return;
+    }
+
+    std::optional<AiInputScope> aiInputScope;
+    if (!IsHumanControlled()) {
+        aiInputScope.emplace();
+        DriveSimpleAi(*this);
+    }
     UpdateHuman(steps);
+
+    if (Fighter* opponent = GetOpponent(*this)) {
+        ClampFighterAgainstOpponent(*this, *opponent);
+        UpdateScaledHurtbox();
+    }
+}
+
+void Narukami::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
+    if (!sprite || (isDead && !IsPlayingResultPose())) return;
+
+    const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
+
+    if (showEffect && currentState == NARUKAMI_MYRIAD_TRUTHS) {
+        DrawMyriadRippleWaves(sprite, effectPos, effectFrame, color);
+        return;
+    }
+
+    if (!showEffect || currentState != NARUKAMI_SUMMON_ZIODYNE) return;
+
+    Fighter* opponent = GetOpponent(*this);
+    const int skillFacing = opponent
+        ? GetSkillFacingDirection(position, GetEnemyHurtboxCenter(*opponent))
+        : facingDirection;
+    DrawNarukamiZiodyneEffect(sprite, effectPos, skillFacing, effectFrame, color);
 }
 
 void Narukami::Render(LPD3DXSPRITE sprite) {
-    if (!sprite || isDead) return;
+    if (!sprite || (isDead && !IsPlayingResultPose())) return;
 
-    const D3DCOLOR color = D3DCOLOR_XRGB(255, 255, 255);
+    const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
     const float bodyFeetY = GetNarukamiBodyFeetY(currentState, currentFrame);
+    const bool frontSummon =
+        showIzanagi &&
+        (currentState == NARUKAMI_SUMMON_ZIO || currentState == NARUKAMI_SUMMON_ZIODYNE);
 
-    // Persona overlay behind the body for melee / skills (Arsene-sized scale).
-    {
-        const NarukamiTexture* izanagiTex = nullptr;
-        if (currentState == NARUKAMI_SUMMON_ZIO && showIzanagi) izanagiTex = &g_IzanagiZio;
-        else if (currentState == NARUKAMI_SUMMON_ZIODYNE && showIzanagi) izanagiTex = &g_IzanagiZiodyne;
-        else if (currentState == NARUKAMI_MYRIAD_TRUTHS && showIzanagi) izanagiTex = &g_IzanagiMyriadTruths;
-        else if (currentState == NARUKAMI_ATTACK && showIzanagi) {
-            izanagiTex = &g_IzanagiAttack;
-        }
-        else if (currentState == NARUKAMI_NEUTRAL_AIR && showIzanagi) {
-            izanagiTex = &g_IzanagiAirAttack;
-        }
-        else if (currentState == NARUKAMI_SIDE_ATTACK) {
-            izanagiTex = &g_IzanagiSwiftStrike;
-        }
-        else if (currentState == NARUKAMI_ATTACK_UP) {
-            izanagiTex = &g_IzanagiCrossSlash;
-        }
+    const NarukamiTexture* izanagiTex = nullptr;
+    if (currentState == NARUKAMI_SUMMON_ZIO && showIzanagi) izanagiTex = &g_IzanagiZio;
+    else if (currentState == NARUKAMI_SUMMON_ZIODYNE && showIzanagi) izanagiTex = &g_IzanagiZiodyne;
+    else if (currentState == NARUKAMI_MYRIAD_TRUTHS && showIzanagi) izanagiTex = &g_IzanagiMyriadTruths;
+    else if (currentState == NARUKAMI_ATTACK && showIzanagi) {
+        izanagiTex = &g_IzanagiAttack;
+    }
+    else if (currentState == NARUKAMI_NEUTRAL_AIR && showIzanagi) {
+        izanagiTex = &g_IzanagiAirAttack;
+    }
+    else if (currentState == NARUKAMI_SIDE_ATTACK) {
+        izanagiTex = &g_IzanagiSwiftStrike;
+    }
+    else if (currentState == NARUKAMI_ATTACK_UP) {
+        izanagiTex = &g_IzanagiCrossSlash;
+    }
 
-        if (izanagiTex && izanagiTex->texture && izanagiTex->maxFrame > 0) {
-            const bool myriad = (currentState == NARUKAMI_MYRIAD_TRUTHS);
-            const D3DXVECTOR3 pos = IsSummonState(currentState)
-                ? izanagiPos
-                : D3DXVECTOR3(
-                    position.x - (float)facingDirection * kIzanagiBehindX,
-                    position.y - kIzanagiBehindY - (myriad ? NARUKAMI_MYRIAD_IZANAGI_LIFT_Y : 0.0f),
-                    0.0f);
-            int frame = IsSummonState(currentState) ? izanagiFrame : currentFrame;
-            if (frame >= izanagiTex->maxFrame) {
-                frame = izanagiTex->maxFrame - 1;
-            }
-            DrawLayer(sprite, *izanagiTex, frame, pos, facingDirection, kPersonaDrawScale, color, NARUKAMI_STANCE_FEET_Y);
+    // Persona behind the body for melee; Myriad draws Izanagi above the head after the body.
+    if (!frontSummon && izanagiTex && izanagiTex->texture && izanagiTex->maxFrame > 0 &&
+        currentState != NARUKAMI_MYRIAD_TRUTHS) {
+        const D3DXVECTOR3 pos = IsSummonState(currentState)
+            ? izanagiPos
+            : D3DXVECTOR3(
+                position.x - (float)facingDirection * kIzanagiBehindX,
+                position.y - kIzanagiBehindY,
+                0.0f);
+        int frame = IsSummonState(currentState) ? izanagiFrame : currentFrame;
+        if (frame >= izanagiTex->maxFrame) {
+            frame = izanagiTex->maxFrame - 1;
         }
+        DrawLayer(sprite, *izanagiTex, frame, pos, facingDirection, kPersonaDrawScale, color, NARUKAMI_STANCE_FEET_Y);
     }
 
     // Sword hilt flies behind during discard (draw behind body).
@@ -1352,10 +1550,51 @@ void Narukami::Render(LPD3DXSPRITE sprite) {
         }
     }
 
-    // Zio / Ziodyne _effect on opponent — Makoto AGI feet-anchor (not centered = too high).
-    if (showEffect && IsSummonState(currentState) && currentState != NARUKAMI_MYRIAD_TRUTHS) {
-        const NarukamiTexture& effectTex =
-            (currentState == NARUKAMI_SUMMON_ZIO) ? g_ZioEffect : g_ZiodyneEffect;
+    if (currentState == NARUKAMI_MYRIAD_TRUTHS && showIzanagi &&
+        g_IzanagiMyriadTruths.texture && g_IzanagiMyriadTruths.maxFrame > 0) {
+        int frame = izanagiFrame;
+        if (frame >= g_IzanagiMyriadTruths.maxFrame) {
+            frame = g_IzanagiMyriadTruths.maxFrame - 1;
+        }
+        DrawLayer(
+            sprite,
+            g_IzanagiMyriadTruths,
+            frame,
+            izanagiPos,
+            facingDirection,
+            kPersonaDrawScale,
+            color,
+            NARUKAMI_STANCE_FEET_Y);
+    }
+
+    Fighter* opponent = GetOpponent(*this);
+    const int skillFacing = opponent
+        ? GetSkillFacingDirection(position, GetEnemyHurtboxCenter(*opponent))
+        : facingDirection;
+    const int izanagiFacing = (currentState == NARUKAMI_SUMMON_ZIO || currentState == NARUKAMI_SUMMON_ZIODYNE)
+        ? skillFacing
+        : facingDirection;
+
+    // Izanagi first, then Ziodyne toward the foe (Thanatos → Maziodyne).
+    if (frontSummon && izanagiTex && izanagiTex->texture && izanagiTex->maxFrame > 0) {
+        int frame = izanagiFrame;
+        if (frame >= izanagiTex->maxFrame) {
+            frame = izanagiTex->maxFrame - 1;
+        }
+        DrawLayer(
+            sprite,
+            *izanagiTex,
+            frame,
+            izanagiPos,
+            izanagiFacing,
+            kPersonaDrawScale,
+            color,
+            NARUKAMI_STANCE_FEET_Y);
+    }
+
+    // Zio bolt on the foe's body center.
+    if (showEffect && currentState == NARUKAMI_SUMMON_ZIO) {
+        const NarukamiTexture& effectTex = g_ZioEffect;
         if (effectTex.texture) {
             SetFrameRect(g_SrcRect, effectTex, effectFrame);
             DrawScaledCharacterSprite(
@@ -1363,11 +1602,11 @@ void Narukami::Render(LPD3DXSPRITE sprite) {
                 effectTex.texture,
                 &g_SrcRect,
                 effectPos,
-                facingDirection,
+                skillFacing,
                 AGI_EFFECT_SCALE * PERSONA_EFFECT_SCALE,
                 color,
-                (float)NARUKAMI_CELL_SIZE,
-                NARUKAMI_STANCE_FEET_Y);
+                (float)MAKOTO_CELL_SIZE,
+                MAKOTO_FEET_Y);
         }
     }
 }
@@ -1375,6 +1614,8 @@ void Narukami::Render(LPD3DXSPRITE sprite) {
 void Narukami::RenderDebugHitbox(LPD3DXSPRITE sprite) {
     if (!sprite) return;
     UpdateScaledHurtbox();
+    const AABB bodyBox = GetBodyCollisionBox();
+    DrawDebugRect(sprite, bodyBox.x, bodyBox.y, bodyBox.width, bodyBox.height, D3DCOLOR_ARGB(160, 255, 64, 255));
     DrawDebugRect(sprite, hurtbox.x, hurtbox.y, hurtbox.width, hurtbox.height, D3DCOLOR_ARGB(160, 80, 200, 120));
 
     if (!IsMeleeState(currentState)) return;
@@ -1413,7 +1654,7 @@ void Narukami::TakeDamage(int damage) {
         if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && health <= 0) {
+        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
             isDead = true;
         }
         return;
@@ -1429,7 +1670,7 @@ void Narukami::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
     }
 }
@@ -1448,8 +1689,56 @@ void Narukami::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
+    }
+}
+
+void Narukami::BeginVictoryPose() {
+    isHit = false;
+    hitStunTimer = 0;
+    showIzanagi = false;
+    showEffect = false;
+    currentState = NARUKAMI_WIN;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(NARUKAMI_WIN);
+    if (maxFrame < 1) maxFrame = 1;
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateScaledHurtbox();
+}
+
+void Narukami::BeginDefeatPose() {
+    isHit = false;
+    hitStunTimer = 0;
+    showIzanagi = false;
+    showEffect = false;
+    currentState = NARUKAMI_LOSE;
+    currentFrame = 0;
+    animAccumulator = 0;
+    maxFrame = GetMaxFrameForState(NARUKAMI_LOSE);
+    if (maxFrame < 1) maxFrame = 1;
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+    UpdateScaledHurtbox();
+}
+
+bool Narukami::IsPlayingResultPose() const {
+    return currentState == NARUKAMI_WIN || currentState == NARUKAMI_LOSE;
+}
+
+bool Narukami::IsInCombatAction() const {
+    switch (currentState) {
+    case NARUKAMI_ATTACK: case NARUKAMI_CROUCH_ATTACK: case NARUKAMI_SIDE_ATTACK:
+    case NARUKAMI_ATTACK_UP: case NARUKAMI_DOWN_ATTACK: case NARUKAMI_NEUTRAL_AIR:
+    case NARUKAMI_DASH: case NARUKAMI_JUMP:
+    case NARUKAMI_PERSONA_SUMMON: case NARUKAMI_PERSONA_AIR_SUMMON:
+    case NARUKAMI_SUMMON_ZIO: case NARUKAMI_SUMMON_ZIODYNE:
+    case NARUKAMI_RAGING_LION: case NARUKAMI_BIG_GAMBLE: case NARUKAMI_MYRIAD_TRUTHS:
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -1457,7 +1746,7 @@ void Narukami::Reset() {
     ApplySlotSpawnDefaults();
     spawnPosition = position;
     health = maxHealth;
-    sp = maxSp;
+    sp = 0;
     RefillStamina();
     isDead = false;
     isHit = false;
@@ -1512,6 +1801,7 @@ bool LoadNarukamiTextures() {
         { &g_AirAttack, "assets/narukami/air_combo.png", 14 },
         { &g_Damage, "assets/narukami/damage.png", 7 },
         { &g_Recover, "assets/narukami/recover.png", 3 },
+        { &g_Win, "assets/narukami/win.png", 0 },
         { &g_Intro, "assets/narukami/intro.png", 13 },
         { &g_IntroEffect, "assets/narukami/intro_effect.png", 2 },
         { &g_Taunt, "assets/narukami/taunt.png", 7 },
@@ -1559,6 +1849,7 @@ void CleanUpNarukamiTextures() {
     ReleaseSheet(g_AirAttack);
     ReleaseSheet(g_Damage);
     ReleaseSheet(g_Recover);
+    ReleaseSheet(g_Win);
     ReleaseSheet(g_Intro);
     ReleaseSheet(g_IntroEffect);
     ReleaseSheet(g_Taunt);

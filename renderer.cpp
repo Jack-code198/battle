@@ -8,6 +8,11 @@
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
 #include <d3dx9.h>
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 extern LPDIRECT3DTEXTURE9 texBgCity1;
 IDirect3D9* g_pD3D = NULL;
@@ -50,6 +55,49 @@ void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DC
     device->Release();
 }
 
+void DrawDebugCircleRing(
+    LPD3DXSPRITE sprite,
+    float cx,
+    float cy,
+    float radius,
+    D3DCOLOR color,
+    int segments)
+{
+    if (!sprite || radius <= 0.0f || segments < 8) return;
+
+    D3DXMATRIX identity;
+    D3DXMatrixIdentity(&identity);
+    sprite->SetTransform(&identity);
+    sprite->Flush();
+
+    struct Vertex { FLOAT x, y, z, rhw; DWORD color; };
+    const int vertCount = segments + 1;
+    Vertex vertices[65];
+    if (vertCount > 65) return;
+
+    for (int i = 0; i < vertCount; ++i) {
+        const float angle = ((float)i / (float)segments) * (float)(2.0 * M_PI);
+        vertices[i].x = cx + cosf(angle) * radius;
+        vertices[i].y = cy + sinf(angle) * radius;
+        vertices[i].z = 0.0f;
+        vertices[i].rhw = 1.0f;
+        vertices[i].color = color;
+    }
+
+    LPDIRECT3DDEVICE9 device = nullptr;
+    sprite->GetDevice(&device);
+    if (!device) return;
+
+    device->SetTexture(0, NULL);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->DrawPrimitiveUP(D3DPT_LINESTRIP, segments, vertices, sizeof(Vertex));
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    device->Release();
+}
+
 bool InitD3D() {
     g_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
     if (g_pD3D == NULL) return false;
@@ -74,7 +122,12 @@ void Render() {
         if (spriteBrush != NULL) {
             spriteBrush->Begin(D3DXSPRITE_ALPHABLEND);
 
-            if (texBgCity1) {
+            // Ultimate cinematic: black out the stage behind the fighters.
+            const bool ultimateActive =
+                (g_Player1 && g_Player1->IsSuperMoveActive()) ||
+                (g_Player2 && g_Player2->IsSuperMoveActive());
+
+            if (texBgCity1 && !ultimateActive) {
                 D3DSURFACE_DESC desc;
                 texBgCity1->GetLevelDesc(0, &desc);
                 float scaleX = (float)SCREEN_WIDTH / (float)desc.Width;
@@ -91,21 +144,30 @@ void Render() {
                 D3DXMatrixIdentity(&matIdentity);
                 spriteBrush->SetTransform(&matIdentity);
             }
-
-            if (g_Player1 && g_Player1->IsSuperMoveActive()) {
-                D3DXVECTOR3 zeroPos(0, 0, 0);
-                spriteBrush->Draw(NULL, NULL, NULL, &zeroPos, g_Player1->GetOverlayColor());
+            else if (ultimateActive) {
+                DrawDebugRect(
+                    spriteBrush,
+                    0.0f,
+                    0.0f,
+                    (float)SCREEN_WIDTH,
+                    (float)SCREEN_HEIGHT,
+                    D3DCOLOR_ARGB(255, 0, 0, 0));
             }
 
             if (g_Player1 && g_Player2) {
-                if (g_Player1->GetPosition().x < g_Player2->GetPosition().x) {
-                    g_Player1->Render(spriteBrush);
-                    g_Player2->Render(spriteBrush);
+                ApplyBattleRenderTints();
+                Fighter* leftFighter = g_Player1;
+                Fighter* rightFighter = g_Player2;
+                if (g_Player1->GetPosition().x >= g_Player2->GetPosition().x) {
+                    leftFighter = g_Player2;
+                    rightFighter = g_Player1;
                 }
-                else {
-                    g_Player2->Render(spriteBrush);
-                    g_Player1->Render(spriteBrush);
-                }
+
+                // Skill beams (Ziodyne): attacker backdrop sits behind the opponent.
+                rightFighter->RenderSkillBackdropBeforeOpponent(spriteBrush);
+                leftFighter->Render(spriteBrush);
+                leftFighter->RenderSkillBackdropBeforeOpponent(spriteBrush);
+                rightFighter->Render(spriteBrush);
 
                 if (g_ShowDebugHitboxes) {
                     g_Player1->RenderDebugHitbox(spriteBrush);
@@ -114,6 +176,10 @@ void Render() {
             }
 
             spriteBrush->End();
+
+            DrawBattleRoundOverlay();
+            DrawBattleTimerOverlay();
+            DrawBattleFadeOverlay(spriteBrush);
 
             if (g_Player1 && g_Player2) {
                 DrawBattleHud(

@@ -9,9 +9,17 @@ class Fighter {
 protected:
     CharacterId characterId;
     int playerSlot;          // 0 = P1 (left), 1 = P2 (right)
-    bool humanControlled;    // true = human input; false = sandbag
+    bool humanControlled;    // true = human P1; false = CPU / sandbag reaction
     // Shared force-based physics body (gravity / jump / fall).
     PhysicsBody physicsBody;
+    // Simple CPU AI timers (only used when !humanControlled).
+    int aiAttackCooldown;
+    int aiJumpCooldown;
+    int aiAttackPulse;
+    int aiAttackMode; // 0 = LMB, 1 = E side, 2 = R up
+    friend void DriveSimpleAi(Fighter& cpuFighter);
+    // Hold last laser / ultimate effect frame for impact.
+    int skillEndHold;
 
     // Integrate gravity for `steps` ticks; keeps character verticalVelocity in sync.
     void ApplyPhysicsGravitySteps(int steps, float& verticalVelocityIO);
@@ -31,14 +39,25 @@ public:
     bool isDead;
     int velocity;
 
+    D3DCOLOR spriteTint;
+
     Fighter();
     virtual ~Fighter() {}
 
     virtual void Update() = 0;
     virtual void Render(LPD3DXSPRITE sprite) = 0;
+    // Beam/backdrop effects that must sit behind the opponent (drawn between fighters).
+    virtual void RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {}
     virtual void TakeDamage(int damage) = 0;
     virtual void ApplySkillDamage(int damage) { TakeDamage(damage); }
     virtual void Reset() = 0;
+
+    // Round result poses (win / lose sheets).
+    virtual void BeginVictoryPose() {}
+    virtual void BeginDefeatPose() {}
+    virtual bool IsPlayingResultPose() const { return false; }
+    // True while attacking / jumping / skills — used by passive AI.
+    virtual bool IsInCombatAction() const { return false; }
 
     CharacterId GetCharacterId() const { return characterId; }
     int GetPlayerSlot() const { return playerSlot; }
@@ -86,6 +105,13 @@ public:
     void UpdateHurtbox(float offsetX, float offsetY, float width, float height);
     // Rebuild hurtbox from DEFAULT_HURTBOX_* constants and current position.
     virtual void UpdateScaledHurtbox();
+
+    // Horizontal move with solid body vs opponent (prevents walking through).
+    void TryApplyHorizontalDelta(float deltaX);
+
+    void SetSpriteTint(D3DCOLOR tint) { spriteTint = tint; }
+    D3DCOLOR GetSpriteTint() const { return spriteTint; }
+    static D3DCOLOR ApplySpriteTint(D3DCOLOR base, D3DCOLOR tint);
 
     // Slot-aware spawn helpers used by Reset implementations.
     void ApplySlotSpawnDefaults();

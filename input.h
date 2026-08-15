@@ -29,6 +29,23 @@ extern InputManager g_InputManager;
 bool IsGameKeyDown(int directInputKey);
 bool IsGameMouseDown(int virtualKey);
 
+// CPU AI key overlay — while enabled, IsGameKeyDown / IsGameMouseDown use ONLY AI
+// state (human keyboard/mouse are ignored) so P2 cannot mirror P1 skill keys.
+void BeginAiInput();
+void EndAiInput();
+void ClearAiInput();
+void SetAiKeyDown(int directInputKey, bool down);
+void SetAiMouseLeftDown(bool down);
+bool IsAiInputEnabled();
+
+// RAII: enables AI overlay for the duration of a CPU UpdateHuman call.
+struct AiInputScope {
+    AiInputScope() { BeginAiInput(); ClearAiInput(); }
+    ~AiInputScope() { ClearAiInput(); EndAiInput(); }
+    AiInputScope(const AiInputScope&) = delete;
+    AiInputScope& operator=(const AiInputScope&) = delete;
+};
+
 LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 void CreateDirectInput();
 void CleanUpDirectInput();
