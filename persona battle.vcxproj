@@ -197,6 +197,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClCompile Include="player\makoto\Makoto.cpp" />
     <ClCompile Include="player\joker\Joker.cpp" />
     <ClCompile Include="player\narukami\Narukami.cpp" />
+    <ClCompile Include="player\yosuke\Yosuke.cpp" />
     <ClCompile Include="stageSelect.cpp" />
     <ClCompile Include="playerSelect.cpp" />
     <ClCompile Include="ui.cpp" />
@@ -215,6 +216,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClInclude Include="player\makoto\Makoto.h" />
     <ClInclude Include="player\joker\Joker.h" />
     <ClInclude Include="player\narukami\Narukami.h" />
+    <ClInclude Include="player\yosuke\Yosuke.h" />
     <ClInclude Include="stageSelect.h" />
     <ClInclude Include="playerSelect.h" />
     <ClInclude Include="ui.h" />

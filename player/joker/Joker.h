@@ -120,6 +120,8 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInCombatAction() const override;
+    bool IsInGuardState() const override;
+    void HoldGuardState(bool airborne) override;
 
     void RenderDebugHitbox(LPD3DXSPRITE sprite) override;
 

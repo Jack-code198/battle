@@ -17,7 +17,9 @@ protected:
     int aiJumpCooldown;
     int aiAttackPulse;
     int aiAttackMode; // 0 = LMB, 1 = E side, 2 = R up
-    friend void DriveSimpleAi(Fighter& cpuFighter);
+    int aiMovePulse;   // steps left for current movement intent
+    int aiMoveIntent;  // AiIntent* — see ai.cpp
+    friend struct AiBrain;
     // Hold last laser / ultimate effect frame for impact.
     int skillEndHold;
 
@@ -58,6 +60,8 @@ public:
     virtual bool IsPlayingResultPose() const { return false; }
     // True while attacking / jumping / skills — used by passive AI.
     virtual bool IsInCombatAction() const { return false; }
+    virtual bool IsInGuardState() const { return false; }
+    virtual void HoldGuardState(bool airborne) { (void)airborne; }
 
     CharacterId GetCharacterId() const { return characterId; }
     int GetPlayerSlot() const { return playerSlot; }
@@ -91,6 +95,7 @@ public:
     void DrainStamina(float amount);
     void RestoreStamina(float amount);
     void RefillStamina();
+    void ResetAiState();
     // While sprinting: gradual drain. Returns false if stamina ran out (caller should force walk).
     bool DrainStaminaWhileRunning(int animSteps);
     // Passiveive refill while not sprinting.

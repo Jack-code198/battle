@@ -5,6 +5,7 @@
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
+#include "player/yosuke/Yosuke.h"
 #include "ui.h"
 
 FrameTimer g_GameTimer;
@@ -75,6 +76,9 @@ Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled) {
     case Char_Narukami:
         fighter = new Narukami();
         break;
+    case Char_Yosuke:
+        fighter = new Yosuke();
+        break;
     default:
         fighter = new Makoto();
         id = Char_Makoto;
@@ -85,6 +89,7 @@ Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled) {
     fighter->SetPlayerSlot(slot);
     fighter->SetHumanControlled(humanControlled);
     fighter->Reset();
+    fighter->ResetAiState();
     return fighter;
 }
 
@@ -159,20 +164,29 @@ static float GetLiveMinCenterGap(const Fighter& a, const Fighter& b) {
         BODY_COLLISION_EPSILON;
 }
 
-void ClampFighterAgainstOpponent(Fighter& self, Fighter& opponent) {
-    const float minGap = GetLiveMinCenterGap(self, opponent);
+static bool ArePushboxesSeparated(const Fighter& left, const Fighter& right) {
+    const AABB leftBox = left.GetBodyCollisionBox();
+    const AABB rightBox = right.GetBodyCollisionBox();
+    return rightBox.x >= leftBox.x + leftBox.width + BODY_COLLISION_EPSILON;
+}
 
-    // Side-view rule: slot 0 (P1) always left of slot 1 (P2). Never use visual side.
+void ClampFighterAgainstOpponent(Fighter& self, Fighter& opponent) {
     if (self.GetPlayerSlot() < opponent.GetPlayerSlot()) {
-        const float maxX = opponent.position.x - minGap;
-        if (self.position.x > maxX) {
-            self.position.x = maxX;
+        const AABB oppBox = opponent.GetBodyCollisionBox();
+        AABB selfBox = self.GetBodyCollisionBox();
+        const float maxRight = oppBox.x - BODY_COLLISION_EPSILON;
+        const float overflow = (selfBox.x + selfBox.width) - maxRight;
+        if (overflow > 0.0f) {
+            self.position.x -= overflow;
         }
     }
     else if (self.GetPlayerSlot() > opponent.GetPlayerSlot()) {
-        const float minX = opponent.position.x + minGap;
-        if (self.position.x < minX) {
-            self.position.x = minX;
+        const AABB oppBox = opponent.GetBodyCollisionBox();
+        AABB selfBox = self.GetBodyCollisionBox();
+        const float minLeft = oppBox.x + oppBox.width + BODY_COLLISION_EPSILON;
+        const float overflow = minLeft - selfBox.x;
+        if (overflow > 0.0f) {
+            self.position.x += overflow;
         }
     }
 
@@ -183,32 +197,46 @@ void ClampFighterAgainstOpponent(Fighter& self, Fighter& opponent) {
 static void EnforceFighterSideOrder(Fighter& a, Fighter& b) {
     Fighter* p1 = (a.GetPlayerSlot() == 0) ? &a : &b;
     Fighter* p2 = (a.GetPlayerSlot() == 1) ? &a : &b;
-    const float minGap = GetLiveMinCenterGap(*p1, *p2);
 
-    if (p2->position.x - p1->position.x >= minGap) {
+    ClampFighterAgainstOpponent(*p1, *p2);
+    ClampFighterAgainstOpponent(*p2, *p1);
+
+    if (ArePushboxesSeparated(*p1, *p2)) {
         return;
     }
 
     if (IsTutorialBattleMode() && p1->IsHumanControlled() && !p2->IsHumanControlled()) {
-        p1->position.x = p2->position.x - minGap;
+        const AABB oppBox = p2->GetBodyCollisionBox();
+        const AABB selfBox = p1->GetBodyCollisionBox();
+        p1->position.x -= (selfBox.x + selfBox.width) - (oppBox.x - BODY_COLLISION_EPSILON);
         ClampFighterPushX(*p1);
         p1->UpdateScaledHurtbox();
         return;
     }
     if (IsTutorialBattleMode() && !p1->IsHumanControlled() && p2->IsHumanControlled()) {
-        p2->position.x = p1->position.x + minGap;
+        const AABB oppBox = p1->GetBodyCollisionBox();
+        const AABB selfBox = p2->GetBodyCollisionBox();
+        p2->position.x += (oppBox.x + oppBox.width + BODY_COLLISION_EPSILON) - selfBox.x;
         ClampFighterPushX(*p2);
         p2->UpdateScaledHurtbox();
         return;
     }
 
-    const float mid = (p1->position.x + p2->position.x) * 0.5f;
-    p1->position.x = mid - minGap * 0.5f;
-    p2->position.x = mid + minGap * 0.5f;
-    ClampFighterPushX(*p1);
-    ClampFighterPushX(*p2);
-    p1->UpdateScaledHurtbox();
-    p2->UpdateScaledHurtbox();
+    const AABB boxP1 = p1->GetBodyCollisionBox();
+    const AABB boxP2 = p2->GetBodyCollisionBox();
+    const float overlap =
+        std::fmin(boxP1.x + boxP1.width, boxP2.x + boxP2.width) - std::fmax(boxP1.x, boxP2.x);
+    if (overlap > 0.0f) {
+        p1->position.x -= overlap * 0.5f;
+        p2->position.x += overlap * 0.5f;
+        ClampFighterPushX(*p1);
+        ClampFighterPushX(*p2);
+        p1->UpdateScaledHurtbox();
+        p2->UpdateScaledHurtbox();
+    }
+
+    ClampFighterAgainstOpponent(*p1, *p2);
+    ClampFighterAgainstOpponent(*p2, *p1);
 }
 
 // Body push (BMCS2224 Physics / collision response).
@@ -281,7 +309,23 @@ void EnforceFighterGroundSeparation(Fighter& a, Fighter& b) {
     b.UpdateScaledHurtbox();
 }
 
+static bool g_BattleExitHandled = false;
+
+static void ApplyBattleResultPoses() {
+    if (!g_Player1 || !g_Player2) return;
+
+    if (g_BattlePlayer1Won) {
+        g_Player1->BeginVictoryPose();
+        g_Player2->BeginDefeatPose();
+    }
+    else {
+        g_Player2->BeginVictoryPose();
+        g_Player1->BeginDefeatPose();
+    }
+}
+
 void ResetBattleFlow() {
+    g_BattleExitHandled = false;
     g_TutorialRecoverIdleFrames[0] = 0;
     g_TutorialRecoverIdleFrames[1] = 0;
 
@@ -310,6 +354,13 @@ bool IsBattleInputAllowed() {
 
 bool ShouldShowBattleKo() {
     return g_BattleFlowPhase == BattleFlowPhase::Knockout;
+}
+
+bool IsBattleEndSequence() {
+    return g_BattleFlowPhase == BattleFlowPhase::Knockout ||
+        g_BattleFlowPhase == BattleFlowPhase::ResultPose ||
+        g_BattleFlowPhase == BattleFlowPhase::FadeOut ||
+        g_BattleFlowPhase == BattleFlowPhase::Finished;
 }
 
 const char* GetBattleCountdownLabel() {
@@ -345,6 +396,53 @@ bool IsHumanPlayerEngaged() {
     }
     if (g_Player1 && g_Player1->IsInCombatAction()) return true;
     return false;
+}
+
+int GetGuardAwayDirection(const Fighter& self) {
+    if (Fighter* opponent = GetOpponent(self)) {
+        const float dx = opponent->GetPosition().x - self.GetPosition().x;
+        if (dx > 1.0f) return -1;
+        if (dx < -1.0f) return 1;
+    }
+    return -self.GetFacingDirection();
+}
+
+int GetGuardTowardDirection(const Fighter& self) {
+    return -GetGuardAwayDirection(self);
+}
+
+// Hold direction toward the opponent to guard (face them while blocking).
+bool IsHoldingGuardInput(const Fighter& self) {
+    const int toward = GetGuardTowardDirection(self);
+    if (toward < 0) {
+        return IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
+    }
+    return IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
+}
+
+bool IsFighterAirborne(const Fighter& self) {
+    return self.GetPosition().y < CHARACTER_GROUND_Y - GROUND_CONTACT_EPSILON;
+}
+
+bool TryProcessGuardBlock(Fighter& defender, int rawDamage, int& appliedDamage) {
+    appliedDamage = rawDamage;
+    if (rawDamage <= 0 || defender.IsDead() || defender.IsPlayingResultPose()) {
+        return false;
+    }
+    if (!IsHoldingGuardInput(defender)) {
+        return false;
+    }
+    if (!defender.IsInGuardState() && defender.IsInCombatAction()) {
+        return false;
+    }
+
+    defender.HoldGuardState(IsFighterAirborne(defender));
+    if (!defender.IsInGuardState() || !IsHoldingGuardInput(defender)) {
+        return false;
+    }
+
+    appliedDamage = GUARD_CHIP_DAMAGE;
+    return true;
 }
 
 void UpdateBattleFlow() {
@@ -387,6 +485,7 @@ void UpdateBattleFlow() {
                 }
                 g_BattleFlowPhase = BattleFlowPhase::Knockout;
                 g_BattleFlowTimer = 0;
+                ApplyBattleResultPoses();
                 break;
             }
         }
@@ -401,22 +500,13 @@ void UpdateBattleFlow() {
             }
             g_BattleFlowPhase = BattleFlowPhase::Knockout;
             g_BattleFlowTimer = 0;
+            ApplyBattleResultPoses();
         }
         break;
 
     case BattleFlowPhase::Knockout:
         g_BattleFlowTimer += steps;
         if (g_BattleFlowTimer >= BATTLE_KO_HOLD_STEPS) {
-            if (g_Player1 && g_Player2) {
-                if (g_BattlePlayer1Won) {
-                    g_Player1->BeginVictoryPose();
-                    g_Player2->BeginDefeatPose();
-                }
-                else {
-                    g_Player2->BeginVictoryPose();
-                    g_Player1->BeginDefeatPose();
-                }
-            }
             g_BattleFlowPhase = BattleFlowPhase::ResultPose;
             g_BattleFlowTimer = 0;
         }
@@ -439,8 +529,20 @@ void UpdateBattleFlow() {
         break;
 
     case BattleFlowPhase::Finished:
+        g_BattleFlowTimer += steps;
         break;
     }
+}
+
+bool ConsumeBattleFinishedExit() {
+    if (g_BattleFlowPhase != BattleFlowPhase::Finished || g_BattleExitHandled) {
+        return false;
+    }
+    if (g_BattleFlowTimer < BATTLE_FINISHED_BLACK_HOLD_STEPS) {
+        return false;
+    }
+    g_BattleExitHandled = true;
+    return true;
 }
 
 void ApplyBattleRenderTints() {

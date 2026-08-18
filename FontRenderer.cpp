@@ -54,7 +54,10 @@ void FontRenderer::OnLostDevice() {
 }
 
 void FontRenderer::OnResetDevice() {
-    if (font) font->OnResetDevice();
+    if (!font) return;
+    if (FAILED(font->OnResetDevice())) {
+        Release();
+    }
 }
 
 void FontRenderer::DrawTextA(
@@ -73,13 +76,37 @@ void FontRenderer::DrawTextA(
         rect.top = (LONG)y;
         rect.right = (LONG)rightEdgeX;
         rect.bottom = (LONG)(y + FONT_DRAW_LINE_HEIGHT);
-        font->DrawTextA(nullptr, text, -1, &rect, DT_RIGHT | DT_NOCLIP, color);
+        if (FAILED(font->DrawTextA(nullptr, text, -1, &rect, DT_RIGHT | DT_NOCLIP, color))) {
+            return;
+        }
     }
     else {
         rect.left = (LONG)x;
         rect.top = (LONG)y;
         rect.right = (LONG)(x + FONT_DRAW_MAX_WIDTH);
         rect.bottom = (LONG)(y + FONT_DRAW_LINE_HEIGHT);
-        font->DrawTextA(nullptr, text, -1, &rect, DT_LEFT | DT_NOCLIP, color);
+        if (FAILED(font->DrawTextA(nullptr, text, -1, &rect, DT_LEFT | DT_NOCLIP, color))) {
+            return;
+        }
+    }
+}
+
+static FontRenderer* g_GameFontRenderer = nullptr;
+
+void BindGameFontRenderer(FontRenderer* renderer) {
+    g_GameFontRenderer = renderer;
+}
+
+void NotifyGameFontDeviceLost() {
+    if (g_GameFontRenderer) {
+        g_GameFontRenderer->OnLostDevice();
+    }
+}
+
+void NotifyGameFontDeviceReset(LPDIRECT3DDEVICE9 device) {
+    if (!g_GameFontRenderer || !device) return;
+    g_GameFontRenderer->OnResetDevice();
+    if (!g_GameFontRenderer->IsReady()) {
+        g_GameFontRenderer->Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
     }
 }

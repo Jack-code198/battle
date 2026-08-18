@@ -59,6 +59,7 @@ struct JokerTextureSet {
 };
 
 static JokerTextureSet g_JokerAnims[JOKER_ANIM_COUNT];
+static JokerTexture g_MonaWin;
 static const int kJokerCellSize = MAKOTO_CELL_SIZE;
 
 static JokerAnimId GetAnimForState(int state);
@@ -269,7 +270,7 @@ void Joker::UpdateHurtbox() {
 }
 
 AABB Joker::GetBodyCollisionBox() const {
-    return MakeLivePushbox(position, JOKER_PUSHBOX_WIDTH, JOKER_PUSHBOX_HEIGHT, GetJokerDrawScale());
+    return MakeLivePushbox(position, facingDirection, JOKER_PUSHBOX_WIDTH, JOKER_PUSHBOX_HEIGHT, GetJokerDrawScale());
 }
 
 void Joker::UpdateScaledHurtbox() {
@@ -899,7 +900,7 @@ void Joker::UpdateHuman(int steps) {
         const bool isEPressed = IsGameKeyDown(DIK_E);
         const bool isRPressed = IsGameKeyDown(DIK_R);
         const bool isSPressed = IsGameKeyDown(DIK_S);
-        const bool isGuardPressed = IsGameKeyDown(DIK_I);
+        const bool isGuardPressed = IsHoldingGuardInput(*this);
 
         if (isLeftPressed) {
             facingDirection = -1;
@@ -962,7 +963,7 @@ void Joker::UpdateHuman(int steps) {
 
         if (currentState == JOKER_GUARD_AIR) {
             AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, MAKOTO_LOOP_TICKS_SLOW, maxFrame);
-            if (!IsGameKeyDown(DIK_I) || IsOnGround()) {
+            if (!IsHoldingGuardInput(*this)) {
                 if (IsOnGround()) {
                     jumpCount = 0;
                     verticalVelocity = 0.0f;
@@ -970,12 +971,17 @@ void Joker::UpdateHuman(int steps) {
                     EnterStance();
                 }
                 else {
-                    // Resume falling; do not snap to stance mid-air.
                     currentState = JOKER_JUMP;
                     currentFrame = 0;
                     animAccumulator = 0;
                     maxFrame = GetMaxFrameForState(JOKER_JUMP);
                 }
+            }
+            else if (IsOnGround()) {
+                jumpCount = 0;
+                verticalVelocity = 0.0f;
+                position.y = CHARACTER_GROUND_Y;
+                EnterActionState(JOKER_GUARD);
             }
             UpdateHurtbox();
             return;
@@ -1107,7 +1113,7 @@ void Joker::UpdateHuman(int steps) {
     const bool isJumpPressed = IsGameKeyDown(DIK_SPACE);
     const bool isDashPressed = IsGameKeyDown(DIK_J);
     const bool isDodgePressed = IsGameMouseDown(VK_RBUTTON);
-    const bool isGuardPressed = IsGameKeyDown(DIK_I);
+    const bool isGuardPressed = IsHoldingGuardInput(*this);
     const bool isTauntPressed = IsGameKeyDown(DIK_T);
     const bool isAttackPressed = attackJustPressed;
     const bool isSideAtkPressed = IsGameKeyDown(DIK_E);
@@ -1260,12 +1266,26 @@ void Joker::Update() {
         const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+
+        if (currentState == JOKER_WIN) {
+            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
         }
-        else {
-            currentFrame = maxFrame - 1;
+        else if (currentState == JOKER_LOSE) {
+            if (currentFrame < maxFrame - 1) {
+                AdvanceOneShotFrame(
+                    animAccumulator,
+                    currentFrame,
+                    animSteps,
+                    BATTLE_LOSE_ANIM_TICKS,
+                    maxFrame);
+            }
+            else {
+                currentFrame = maxFrame - 1;
+            }
         }
+
+        position.y = CHARACTER_GROUND_Y;
+        verticalVelocity = 0.0f;
         UpdateHurtbox();
         return;
     }
@@ -1291,8 +1311,20 @@ void Joker::Update() {
 void Joker::TakeDamage(int damage) {
     if (isDead) return;
 
+    int appliedDamage = damage;
+    if (TryProcessGuardBlock(*this, damage, appliedDamage)) {
+        if (appliedDamage > 0) {
+            health -= appliedDamage;
+            if (health < 0) health = 0;
+        }
+        trainingIdleFrames = 0;
+        idleWaitFrames = 0;
+        UpdateHurtbox();
+        return;
+    }
+
     // Always apply HP so follow-up hits / skills still hurt after knock-down.
-    health -= damage;
+    health -= appliedDamage;
     if (health < 0) health = 0;
     trainingIdleFrames = 0;
     idleWaitFrames = 0;
@@ -1311,6 +1343,18 @@ void Joker::TakeDamage(int damage) {
     if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
     }
+}
+
+bool Joker::IsInGuardState() const {
+    return currentState == JOKER_GUARD || currentState == JOKER_GUARD_AIR;
+}
+
+void Joker::HoldGuardState(bool airborne) {
+    const int target = airborne ? JOKER_GUARD_AIR : JOKER_GUARD;
+    if (currentState == target) {
+        return;
+    }
+    EnterActionState(target);
 }
 
 void Joker::ApplySkillDamage(int damage) {
@@ -1549,7 +1593,9 @@ void Joker::Render(LPD3DXSPRITE sprite) {
     const bool hideArsene =
         currentState == JOKER_DAMAGE ||
         currentState == JOKER_RECOVER ||
-        currentState == JOKER_INTRO;
+        currentState == JOKER_INTRO ||
+        currentState == JOKER_WIN ||
+        currentState == JOKER_LOSE;
 
     D3DXVECTOR3 bodyPos = position;
     if (currentState == JOKER_ALL_OUT_MEMBER) {
@@ -1588,26 +1634,31 @@ void Joker::Render(LPD3DXSPRITE sprite) {
 
     DrawBodySprite(sprite, const_cast<JokerTexture&>(set.joker), bodyFrame, bodyPos, color);
 
-    // Taunt: Mona plays on the ground in front of Joker (no float/hop offset).
-    if (currentState == JOKER_TAUNT && set.jokerEffect.texture) {
-        int monaFrame = skillEffectFrame;
-        if (monaFrame < 0) monaFrame = 0;
-        if (set.jokerEffect.maxFrame > 0 && monaFrame >= set.jokerEffect.maxFrame) {
-            monaFrame = set.jokerEffect.maxFrame - 1;
+    // Taunt / win: Mona on the ground in front of Joker (same slot as taunt).
+    if (currentState == JOKER_TAUNT || currentState == JOKER_WIN) {
+        const JokerTexture& monaTex = g_MonaWin.texture
+            ? g_MonaWin
+            : g_JokerAnims[JOKER_ANIM_TAUNT].jokerEffect;
+        if (monaTex.texture) {
+            int monaFrame = (currentState == JOKER_WIN) ? bodyFrame : skillEffectFrame;
+            if (monaFrame < 0) monaFrame = 0;
+            if (monaTex.maxFrame > 0 && monaFrame >= monaTex.maxFrame) {
+                monaFrame = monaTex.maxFrame - 1;
+            }
+            const D3DXVECTOR3 monaPos(
+                position.x + (float)facingDirection * MONA_TAUNT_OFFSET_X,
+                position.y,
+                0.0f);
+            DrawJokerLayerSprite(
+                sprite,
+                const_cast<JokerTexture&>(monaTex),
+                monaFrame,
+                monaPos,
+                facingDirection,
+                JOKER_BODY_HEIGHT,
+                MONA_TAUNT_FEET_Y,
+                color);
         }
-        const D3DXVECTOR3 monaPos(
-            position.x + (float)facingDirection * MONA_TAUNT_OFFSET_X,
-            position.y,
-            0.0f);
-        DrawJokerLayerSprite(
-            sprite,
-            set.jokerEffect,
-            monaFrame,
-            monaPos,
-            facingDirection,
-            JOKER_BODY_HEIGHT,
-            MONA_TAUNT_FEET_Y,
-            color);
     }
 
     if (IsSkillState(currentState)) {
@@ -1681,10 +1732,18 @@ bool LoadJokerTextures() {
             LoadJokerSheet(set.arseneEffect, info.arseneEffectFile, arseneFrames);
         }
     }
+    if (!LoadJokerSheet(g_MonaWin, "mona_win.png", MONA_TAUNT_FRAME_COUNT)) {
+        g_MonaWin = g_JokerAnims[JOKER_ANIM_TAUNT].jokerEffect;
+    }
     return g_JokerAnims[JOKER_ANIM_STANCE].joker.texture != nullptr;
 }
 
 void CleanUpJokerTextures() {
+    if (g_MonaWin.texture &&
+        g_MonaWin.texture != g_JokerAnims[JOKER_ANIM_TAUNT].jokerEffect.texture) {
+        ReleaseJokerSheet(g_MonaWin);
+    }
+    g_MonaWin = JokerTexture{};
     for (int i = 0; i < JOKER_ANIM_COUNT; ++i) {
         ReleaseJokerSheet(g_JokerAnims[i].joker);
         ReleaseJokerSheet(g_JokerAnims[i].arsene);

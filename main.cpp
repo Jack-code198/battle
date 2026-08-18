@@ -7,6 +7,7 @@
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
+#include "player/yosuke/Yosuke.h"
 #include "audio.h"
 #include "ui.h"
 #include "menuMain.h"
@@ -61,6 +62,7 @@ static bool g_CollisionSystemsReady = false;
 
 static void InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     // Font / FontRenderer
+    BindGameFontRenderer(&g_FontRenderer);
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
 
     // Physics module demo (fighters also use PhysicsBody via ApplyPhysicsGravitySteps).
@@ -177,9 +179,15 @@ static void StartBattleFromSelect() {
 
 static void CheckBattleGameOver() {
     if (!g_Player1 || !g_Player2) return;
-    if (g_BattleFlowPhase == BattleFlowPhase::Finished) {
-        g_StateStack.ExecuteGameOver();
-    }
+    if (!ConsumeBattleFinishedExit()) return;
+
+    g_SoundManager.StopBattleMusic();
+    g_SoundManager.PlayMenuMusic();
+    SetMenuCursorEnabled(true);
+    ResetPlayerSelectInputState();
+    playerSelectChoice = 0;
+    g_StateStack.ReturnToPlayerSelectAfterBattle();
+    ResetBattleFlow();
 }
 
 // Entry point (BMCS2224): int main — game loop, font, collision, physics, state stack.
@@ -207,6 +215,10 @@ int main(int argc, char* argv[]) {
 
     if (!LoadNarukamiTextures()) {
         MessageBox(g_hWnd, "Failed to load assets/narukami textures", "Error", MB_OK);
+    }
+
+    if (!LoadYosukeTextures()) {
+        MessageBox(g_hWnd, "Failed to load assets/yosuke textures", "Error", MB_OK);
     }
 
     if (!LoadPlayerSelectTextures()) {
@@ -324,7 +336,7 @@ int main(int argc, char* argv[]) {
             break;
         }
         case AppScreen::GameOver: {
-            // Result screen — WIN if P1 won, LOSE if P1 lost.
+            // BMCS2224: GameStateStack ExecuteGameOver / RetryFromGameOver (R = retry, ESC = menu).
             RenderGameOverScreen();
 
             const bool retryPressed = (diKeys[DIK_R] & 0x80) != 0;

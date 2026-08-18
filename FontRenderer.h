@@ -28,3 +28,8 @@ private:
     const char* loadedFontPath;
     bool fontResourceLoaded;
 };
+
+// D3D9 device lost/reset hooks (called from renderer.cpp ToggleFullscreen).
+void BindGameFontRenderer(FontRenderer* renderer);
+void NotifyGameFontDeviceLost();
+void NotifyGameFontDeviceReset(LPDIRECT3DDEVICE9 device);

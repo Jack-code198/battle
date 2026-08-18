@@ -18,6 +18,7 @@ static PlayerSelectSlot g_Roster[] = {
     { Char_Makoto,   NULL },
     { Char_Joker,    NULL },
     { Char_Narukami, NULL },
+    { Char_Yosuke,   NULL },
 };
 static const int ROSTER_COUNT = sizeof(g_Roster) / sizeof(g_Roster[0]);
 
@@ -174,6 +175,9 @@ bool LoadPlayerSelectTextures() {
         else if (g_Roster[i].id == Char_Narukami) {
             keyColor = D3DCOLOR_XRGB(NARUKAMI_COLORKEY_R, NARUKAMI_COLORKEY_G, NARUKAMI_COLORKEY_B);
         }
+        else if (g_Roster[i].id == Char_Yosuke) {
+            keyColor = D3DCOLOR_XRGB(YOSUKE_COLORKEY_R, YOSUKE_COLORKEY_G, YOSUKE_COLORKEY_B);
+        }
 
         HRESULT hr = D3DXCreateTextureFromFileEx(
             g_pD3DDevice,
@@ -196,6 +200,9 @@ bool LoadPlayerSelectTextures() {
         }
         else if (g_Roster[i].id == Char_Narukami) {
             ApplyNarukamiColorKey(g_Roster[i].texture);
+        }
+        else if (g_Roster[i].id == Char_Yosuke) {
+            ApplyYosukeColorKey(g_Roster[i].texture);
         }
     }
 

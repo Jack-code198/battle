@@ -109,6 +109,7 @@ private:
     void BeginSandbagHitReaction();
     void BeginSandbagRecover();
     void FinishSandbagRecover();
+    void ClearResultPoseVisuals();
 
 public:
     Makoto();
@@ -123,6 +124,8 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInCombatAction() const override;
+    bool IsInGuardState() const override;
+    void HoldGuardState(bool airborne) override;
 
     int GetCurrentState() const { return currentState; }
     int GetCurrentFrame() const { return currentFrame; }
