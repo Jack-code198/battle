@@ -10,6 +10,8 @@ Fighter::Fighter()
     , aiJumpCooldown(0)
     , aiAttackPulse(0)
     , aiAttackMode(0)
+    , aiMovePulse(0)
+    , aiMoveIntent(0)
     , skillEndHold(0)
     , facingDirection(1)
     , health(MAKOTO_MAX_HEALTH)
@@ -126,6 +128,15 @@ void Fighter::RestoreStamina(float amount) {
 
 void Fighter::RefillStamina() {
     stamina = maxStamina;
+}
+
+void Fighter::ResetAiState() {
+    aiAttackCooldown = 0;
+    aiJumpCooldown = 0;
+    aiAttackPulse = 0;
+    aiAttackMode = 0;
+    aiMovePulse = 0;
+    aiMoveIntent = 0;
 }
 
 bool Fighter::DrainStaminaWhileRunning(int animSteps) {

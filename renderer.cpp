@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "FontRenderer.h"
 #include "game_logic.h"
 #include "ui.h"
 #include "menuMain.h"
@@ -7,6 +8,7 @@
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
+#include "player/yosuke/Yosuke.h"
 #include <d3dx9.h>
 #include <cmath>
 
@@ -156,12 +158,9 @@ void Render() {
 
             if (g_Player1 && g_Player2) {
                 ApplyBattleRenderTints();
+                // Draw depth follows slot (P1 then P2), not current X — avoids "phasing behind" visuals.
                 Fighter* leftFighter = g_Player1;
                 Fighter* rightFighter = g_Player2;
-                if (g_Player1->GetPosition().x >= g_Player2->GetPosition().x) {
-                    leftFighter = g_Player2;
-                    rightFighter = g_Player1;
-                }
 
                 // Skill beams (Ziodyne): attacker backdrop sits behind the opponent.
                 rightFighter->RenderSkillBackdropBeforeOpponent(spriteBrush);
@@ -207,6 +206,7 @@ void CleanUpD3D() {
     CleanUpMakotoTextures();
     CleanUpJokerTextures();
     CleanUpNarukamiTextures();
+    CleanUpYosukeTextures();
     CleanUpHudTextures();
 
     if (texBgCity1) { texBgCity1->Release(); texBgCity1 = NULL; }
@@ -259,6 +259,7 @@ void ToggleFullscreen() {
 
     // Keep logical 1024x768 backbuffer; Present stretches to the window.
     if (spriteBrush) spriteBrush->OnLostDevice();
+    NotifyGameFontDeviceLost();
     NotifyMenuDeviceLost();
     NotifyStageDeviceLost();
     NotifyPlayerSelectDeviceLost();
@@ -275,6 +276,7 @@ void ToggleFullscreen() {
     HRESULT hr = g_pD3DDevice->Reset(&d3dpp);
     if (SUCCEEDED(hr)) {
         if (spriteBrush) spriteBrush->OnResetDevice();
+        NotifyGameFontDeviceReset(g_pD3DDevice);
         NotifyMenuDeviceReset();
         NotifyStageDeviceReset();
         NotifyPlayerSelectDeviceReset();

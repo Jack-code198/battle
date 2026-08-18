@@ -158,7 +158,7 @@ static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight
     else if (state == CROUCH || state == CROUCH_ATTACK) {
         feetY = MAKOTO_CROUCH_FEET_Y;
     }
-    else if (state == DAMAGE) {
+    else if (state == DAMAGE || state == MAKOTO_LOSE) {
         feetY = GetMakotoDamageFeetY(frameIndex);
     }
     else if (state == RECOVER) {
@@ -392,7 +392,7 @@ Makoto::Makoto()
 }
 
 AABB Makoto::GetBodyCollisionBox() const {
-    return MakeLivePushbox(position, MAKOTO_BODY_WIDTH, MAKOTO_BODY_HEIGHT, GetMakotoDrawScale());
+    return MakeLivePushbox(position, facingDirection, MAKOTO_BODY_WIDTH, MAKOTO_BODY_HEIGHT, GetMakotoDrawScale());
 }
 
 Makoto::~Makoto() {}
@@ -674,12 +674,26 @@ void Makoto::Update() {
         const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+
+        if (currentState == MAKOTO_WIN) {
+            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
         }
-        else {
-            currentFrame = maxFrame - 1;
+        else if (currentState == MAKOTO_LOSE) {
+            if (currentFrame < maxFrame - 1) {
+                AdvanceOneShotFrame(
+                    animAccumulator,
+                    currentFrame,
+                    animSteps,
+                    BATTLE_LOSE_ANIM_TICKS,
+                    maxFrame);
+            }
+            else {
+                currentFrame = maxFrame - 1;
+            }
         }
+
+        position.y = CHARACTER_GROUND_Y;
+        verticalVelocity = 0.0f;
         UpdateScaledHurtbox();
         return;
     }
@@ -875,6 +889,38 @@ void Makoto::Update() {
         UpdateScaledHurtbox();
         return;
     }
+    if (currentState == GUARD_AIR) {
+        ApplyGravity(steps);
+        maxFrame = GetMaxFrameForState(GUARD_AIR);
+        AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, MAKOTO_LOOP_TICKS_SLOW, maxFrame);
+
+        if (!IsHoldingGuardInput(*this)) {
+            if (IsOnGround()) {
+                jumpCount = 0;
+                verticalVelocity = 0.0f;
+                position.y = CHARACTER_GROUND_Y;
+                CompleteOneShotToStance(maxFrame - 1);
+            }
+            else {
+                currentState = JUMP;
+                currentFrame = 0;
+                animAccumulator = 0;
+                maxFrame = GetMaxFrameForState(JUMP);
+            }
+        }
+        else if (IsOnGround() && verticalVelocity >= 0.0f) {
+            jumpCount = 0;
+            verticalVelocity = 0.0f;
+            position.y = CHARACTER_GROUND_Y;
+            currentState = GUARD;
+            maxFrame = GetMaxFrameForState(GUARD);
+        }
+
+        ClampMakotoCenterX(position.x);
+        UpdateScaledHurtbox();
+        return;
+    }
+
     if (currentState == JUMP) {
         bool isLeftPressed = IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
         bool isRightPressed = IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
@@ -889,6 +935,12 @@ void Makoto::Update() {
 
         if (isLeftPressed) facingDirection = -1;
         else if (isRightPressed) facingDirection = 1;
+
+        if (IsHoldingGuardInput(*this)) {
+            HoldGuardState(true);
+            UpdateScaledHurtbox();
+            return;
+        }
 
         if (isKey3 && (CanUseSpaceChord() || isJumpPressed) && TryConsumeSp(SP_COST_SUMMON_AIR)) {
             currentState = SUMMON_AIR;
@@ -1078,7 +1130,7 @@ void Makoto::Update() {
     bool isDashPressed = IsGameKeyDown(DIK_J);
     bool isAttackPressed = attackJustPressed;
     bool isDodgePressed = IsGameMouseDown(VK_RBUTTON);
-    bool isGuardPressed = IsGameKeyDown(DIK_I);
+    const bool isGuardPressed = IsHoldingGuardInput(*this);
     bool isCrouchPressed = IsGameKeyDown(DIK_C);
     bool isSideAtkPressed = IsGameKeyDown(DIK_E);
     bool isAtkUpPressed = IsGameKeyDown(DIK_R);
@@ -1503,6 +1555,18 @@ void Makoto::Render(LPD3DXSPRITE sprite) {
         DrawMakotoEffectSprite(sprite, makotoOrpheus, orpheusFrame, orpheusPos, fxColor, facingDirection, PERSONA_EFFECT_SCALE);
     }
 
+    if (currentState == MAKOTO_WIN && makotoThanatosWin.texture && bodyFrame >= 0) {
+        const D3DXVECTOR3 thanatosWinPos = GetOrpheusPosBehindMakoto(position, facingDirection);
+        DrawMakotoEffectSprite(
+            sprite,
+            makotoThanatosWin,
+            bodyFrame,
+            thanatosWinPos,
+            fxColor,
+            facingDirection,
+            PERSONA_EFFECT_SCALE);
+    }
+
     if (drawBody && bodyTex && bodyTex->texture) {
         int renderState = (actionVisualHold > 0) ? actionHoldState : currentState;
         float bodyHeight = MAKOTO_BODY_HEIGHT;
@@ -1719,7 +1783,17 @@ void Makoto::UpdateSandbag(int steps) {
 void Makoto::TakeDamage(int damage) {
     if (isDead) return;
 
-    health -= damage;
+    int appliedDamage = damage;
+    if (TryProcessGuardBlock(*this, damage, appliedDamage)) {
+        if (appliedDamage > 0) {
+            health -= appliedDamage;
+            if (health < 0) health = 0;
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    health -= appliedDamage;
     if (health < 0) health = 0;
 
     if (currentState != DAMAGE && currentState != RECOVER) {
@@ -1729,6 +1803,25 @@ void Makoto::TakeDamage(int damage) {
     if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
     }
+}
+
+bool Makoto::IsInGuardState() const {
+    return currentState == GUARD || currentState == GUARD_AIR;
+}
+
+void Makoto::HoldGuardState(bool airborne) {
+    const int target = airborne ? GUARD_AIR : GUARD;
+    if (currentState == target) {
+        return;
+    }
+    if (ResetsAnimationOnEnter(target)) {
+        currentFrame = 0;
+        animAccumulator = 0;
+    }
+    currentState = target;
+    maxFrame = GetMaxFrameForState(target);
+    if (maxFrame < 1) maxFrame = 1;
+    hitThisAttack = false;
 }
 
 void Makoto::Reset() {
@@ -1783,10 +1876,29 @@ bool Makoto::IsAttacking() const {
         currentState == CROUCH_ATTACK;
 }
 
+void Makoto::ClearResultPoseVisuals() {
+    isSuperMoveActive = false;
+    isMakotoGray = false;
+    overlayColor = 0;
+    isOrpheusActive = false;
+    isJackFrostActive = false;
+    isAGIActive = false;
+    isMabufuActive = false;
+    isThanatosActive = false;
+    isMaziodyneActive = false;
+    isThanatosSlashActive = false;
+    isMessiahActive = false;
+    isMegidolaonActive = false;
+    actionVisualHold = 0;
+    actionHoldState = STANCE;
+    actionHoldFrame = 0;
+    meleeHitSparkActive = false;
+}
+
 void Makoto::BeginVictoryPose() {
     isHit = false;
     hitStunTimer = 0;
-    isSuperMoveActive = false;
+    ClearResultPoseVisuals();
     currentState = MAKOTO_WIN;
     currentFrame = 0;
     animAccumulator = 0;
@@ -1800,7 +1912,7 @@ void Makoto::BeginVictoryPose() {
 void Makoto::BeginDefeatPose() {
     isHit = false;
     hitStunTimer = 0;
-    isSuperMoveActive = false;
+    ClearResultPoseVisuals();
     currentState = MAKOTO_LOSE;
     currentFrame = 0;
     animAccumulator = 0;

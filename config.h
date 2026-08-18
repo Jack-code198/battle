@@ -123,14 +123,30 @@ inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 8;
 inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 4;
 
 // Simple P2 CPU AI (distances in screen pixels; cooldowns in update steps).
-inline constexpr float AI_ATTACK_RANGE = 78.0f;
+inline constexpr float AI_ATTACK_RANGE = 82.0f;
+inline constexpr float AI_APPROACH_STOP_GAP = 22.0f;
+inline constexpr float AI_SPACING_RANGE = 58.0f;
 inline constexpr float AI_ENGAGE_RANGE = 160.0f;
-inline constexpr float AI_RUN_RANGE = 220.0f;
-inline constexpr int AI_ATTACK_COOLDOWN_STEPS = 48;
-inline constexpr int AI_ATTACK_PULSE_STEPS = 4;
-inline constexpr int AI_JUMP_COOLDOWN_STEPS = 90;
-inline constexpr int AI_SIDE_ATTACK_CHANCE_PERCENT = 12;
-inline constexpr int AI_JUMP_CHANCE_PERCENT = 10;
+inline constexpr float AI_APPROACH_RANGE = 130.0f;
+inline constexpr float AI_RETREAT_RANGE = 50.0f;
+inline constexpr float AI_RUN_RANGE = 200.0f;
+inline constexpr int AI_ATTACK_COOLDOWN_STEPS = 32;
+inline constexpr int AI_ATTACK_PULSE_STEPS = 1;
+inline constexpr int AI_SKILL_ATTACK_PULSE_STEPS = 5;
+inline constexpr int AI_JUMP_COOLDOWN_STEPS = 140;
+inline constexpr int AI_SIDE_ATTACK_CHANCE_PERCENT = 16;
+inline constexpr int AI_JUMP_CHANCE_PERCENT = 4;
+inline constexpr float AI_GUARD_RANGE = 110.0f;
+inline constexpr int AI_APPROACH_BURST_STEPS = 5;
+inline constexpr int AI_RETREAT_STEPS = 20;
+inline constexpr int AI_IDLE_STEPS = 24;
+inline constexpr int AI_MICRO_STEP_STEPS = 10;
+inline constexpr int AI_IDLE_CHANCE_PERCENT = 38;
+inline constexpr int AI_RETREAT_CHANCE_PERCENT = 22;
+inline constexpr int AI_GUARD_REACTION_PERCENT = 50;
+inline constexpr int AI_ATTACK_INITIATIVE_PERCENT = 42;
+inline constexpr int AI_ENGAGED_ATTACK_PERCENT = 92;
+inline constexpr int GUARD_CHIP_DAMAGE = 0;
 
 // Measured recover / air-lift offsets (from sprite feet rows — do not guess).
 inline constexpr float MAKOTO_RECOVER_FEET_Y = 32.0f;
@@ -160,8 +176,11 @@ inline constexpr float GAME_OVER_HINT_Y = 340.0f;
 inline constexpr int BATTLE_COUNTDOWN_DIGIT_STEPS = 55;
 inline constexpr int BATTLE_COUNTDOWN_FIGHT_STEPS = 40;
 inline constexpr int BATTLE_KO_HOLD_STEPS = 70;
-inline constexpr int BATTLE_RESULT_POSE_MIN_STEPS = 240;
-inline constexpr int BATTLE_FADE_OUT_STEPS = 150;
+// Win/lose poses stay on screen after the KO banner until fade begins.
+inline constexpr int BATTLE_RESULT_POSE_MIN_STEPS = 360;
+inline constexpr int BATTLE_FADE_OUT_STEPS = 180;
+// Keep full black on screen briefly before leaving the battle scene.
+inline constexpr int BATTLE_FINISHED_BLACK_HOLD_STEPS = 60;
 inline constexpr int BATTLE_WIN_ANIM_TICKS = 10;
 inline constexpr int BATTLE_LOSE_ANIM_TICKS = 10;
 
@@ -414,13 +433,27 @@ inline void ClampJokerCenterX(float& centerX) {
     ClampFighterCenterX(centerX, GetJokerScreenHalfWidth());
 }
 
-// Live pushbox from current feet position — same math Makoto / Joker use.
-inline AABB MakeLivePushbox(const D3DXVECTOR3& pos, float bodyWidth, float bodyHeight, float drawScale) {
+// Live pushbox from current feet anchor — matches DrawScaledCharacterSprite layout.
+inline AABB MakeLivePushbox(
+    const D3DXVECTOR3& pos,
+    int facingDirection,
+    float bodyWidth,
+    float bodyHeight,
+    float drawScale)
+{
+    const float w = bodyWidth * drawScale;
+    const float h = bodyHeight * drawScale;
+    const float anchor = MAKOTO_BODY_CENTER_X * drawScale;
     AABB box;
-    box.width = bodyWidth * drawScale;
-    box.height = bodyHeight * drawScale;
-    box.x = pos.x - box.width * 0.5f;
-    box.y = pos.y - box.height;
+    box.width = w;
+    box.height = h;
+    box.y = pos.y - h;
+    if (facingDirection < 0) {
+        box.x = pos.x + anchor - w;
+    }
+    else {
+        box.x = pos.x - anchor;
+    }
     return box;
 }
 
@@ -443,6 +476,18 @@ inline constexpr BYTE PERSONA_COLORKEY_B = 255;
 inline constexpr BYTE JOKER_COLORKEY_R = 232;
 inline constexpr BYTE JOKER_COLORKEY_G = 4;
 inline constexpr BYTE JOKER_COLORKEY_B = 4;
+
+// Yosuke / Jiraiya sheet background key (warm yellow).
+inline constexpr BYTE YOSUKE_COLORKEY_R = 255;
+inline constexpr BYTE YOSUKE_COLORKEY_G = 200;
+inline constexpr BYTE YOSUKE_COLORKEY_B = 84;
+
+inline constexpr int YOSUKE_MAX_HEALTH = 400;
+inline constexpr int YOSUKE_MOVE_SPEED = 6;
+inline constexpr float YOSUKE_STANCE_FEET_Y = 52.0f;
+inline constexpr float YOSUKE_RUN_FEET_Y = 47.0f;
+inline constexpr float YOSUKE_JIRAIYA_SCALE = 1.0f;
+inline constexpr float YOSUKE_INTRO_DROP_START_Y = -120.0f;
 
 // Narukami sheet background key (yellow).
 inline constexpr BYTE NARUKAMI_COLORKEY_R = 249;
@@ -485,6 +530,10 @@ inline void ApplyJokerColorKey(LPDIRECT3DTEXTURE9 tex) {
 
 inline void ApplyPersonaBlueColorKey(LPDIRECT3DTEXTURE9 tex) {
     ApplyTextureColorKey(tex, PERSONA_COLORKEY_R, PERSONA_COLORKEY_G, PERSONA_COLORKEY_B);
+}
+
+inline void ApplyYosukeColorKey(LPDIRECT3DTEXTURE9 tex) {
+    ApplyTextureColorKey(tex, YOSUKE_COLORKEY_R, YOSUKE_COLORKEY_G, YOSUKE_COLORKEY_B);
 }
 
 inline void ApplyNarukamiColorKey(LPDIRECT3DTEXTURE9 tex) {

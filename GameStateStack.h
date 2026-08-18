@@ -45,6 +45,23 @@ public:
         Push(AppScreen::MainMenu);
     }
 
+    // After round fade-out: pop Battle / StageSelect / GameOver, land on PlayerSelect.
+    void ReturnToPlayerSelectAfterBattle() {
+        while (!Empty()) {
+            const AppScreen top = Current();
+            if (top == AppScreen::PlayerSelect) {
+                return;
+            }
+            if (top == AppScreen::MainMenu) {
+                Push(AppScreen::PlayerSelect);
+                return;
+            }
+            Pop();
+        }
+        Push(AppScreen::MainMenu);
+        Push(AppScreen::PlayerSelect);
+    }
+
     AppScreen Current() const {
         if (screens.empty()) return AppScreen::MainMenu;
         return screens.back();

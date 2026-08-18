@@ -69,6 +69,7 @@ NarukamiTexture g_Dash;
 NarukamiTexture g_Jump;
 NarukamiTexture g_Crouch;
 NarukamiTexture g_Guard;
+NarukamiTexture g_GuardAir;
 NarukamiTexture g_Attack;
 NarukamiTexture g_SideAttack;
 NarukamiTexture g_UpAttack;
@@ -77,6 +78,7 @@ NarukamiTexture g_AirAttack;
 NarukamiTexture g_Damage;
 NarukamiTexture g_Recover;
 NarukamiTexture g_Win;
+NarukamiTexture g_IzanagiWin;
 NarukamiTexture g_Intro;
 NarukamiTexture g_IntroEffect;
 NarukamiTexture g_Taunt;
@@ -214,6 +216,8 @@ const NarukamiTexture* GetTextureForState(int state) {
     case NARUKAMI_CROUCH_ATTACK: return &g_Attack;
     case NARUKAMI_CROUCH: return &g_Crouch;
     case NARUKAMI_GUARD: return &g_Guard;
+    case NARUKAMI_GUARD_AIR:
+        return g_GuardAir.texture ? &g_GuardAir : &g_Guard;
     case NARUKAMI_SIDE_ATTACK: return &g_SideAttack;
     case NARUKAMI_ATTACK_UP: return &g_UpAttack;
     case NARUKAMI_DOWN_ATTACK: return &g_DownAttack;
@@ -244,6 +248,7 @@ bool AllowsMovement(int state) {
     case NARUKAMI_RUN:
     case NARUKAMI_CROUCH:
     case NARUKAMI_GUARD:
+    case NARUKAMI_GUARD_AIR:
         return true;
     default:
         return false;
@@ -256,6 +261,7 @@ bool ResetsAnimationOnEnter(int state) {
     case NARUKAMI_WALK:
     case NARUKAMI_RUN:
     case NARUKAMI_GUARD:
+    case NARUKAMI_GUARD_AIR:
         return false;
     default:
         return true;
@@ -333,7 +339,7 @@ float GetNarukamiBodyFeetY(int state, int frameIndex) {
     if (state == NARUKAMI_CROUCH || state == NARUKAMI_CROUCH_ATTACK) {
         return NARUKAMI_CROUCH_FEET_Y;
     }
-    if (state == NARUKAMI_DAMAGE) {
+    if (state == NARUKAMI_DAMAGE || state == NARUKAMI_LOSE) {
         static const float kDamageFeetY[] = { 52.0f, 49.0f, 55.0f, 52.0f, 52.0f, 34.0f, 19.0f };
         const int count = (int)(sizeof(kDamageFeetY) / sizeof(kDamageFeetY[0]));
         if (frameIndex < 0) frameIndex = 0;
@@ -519,8 +525,25 @@ Narukami::Narukami()
 }
 
 AABB Narukami::GetBodyCollisionBox() const {
-    // Same live formula as Makoto / Joker: current feet X/Y * the draw scale used by DrawLayer.
-    return MakeLivePushbox(position, NARUKAMI_PUSHBOX_WIDTH, NARUKAMI_PUSHBOX_HEIGHT, GetMakotoDrawScale());
+    // Same body constants + anchor as Makoto; dash extends the live pushbox forward.
+    AABB box = MakeLivePushbox(
+        position,
+        facingDirection,
+        NARUKAMI_PUSHBOX_WIDTH,
+        NARUKAMI_PUSHBOX_HEIGHT,
+        GetMakotoDrawScale());
+
+    if (currentState == NARUKAMI_DASH) {
+        const float extend = DASH_HITBOX_FORWARD * GetMakotoDrawScale();
+        if (facingDirection < 0) {
+            box.x -= extend;
+            box.width += extend;
+        }
+        else {
+            box.width += extend;
+        }
+    }
+    return box;
 }
 
 void Narukami::UpdateScaledHurtbox() {
@@ -965,6 +988,10 @@ void Narukami::UpdateHuman(int steps) {
     Fighter* opponent = GetOpponent(*this);
     if (!opponent) return;
 
+    if (!IsHumanControlled()) {
+        facingDirection = (opponent->GetPosition().x >= position.x) ? 1 : -1;
+    }
+
     const int animSteps = 1;
     const bool attackDownNow = IsGameMouseDown(VK_LBUTTON);
     const bool attackJustPressed = attackDownNow && !attackButtonHeld;
@@ -1124,6 +1151,34 @@ void Narukami::UpdateHuman(int steps) {
         return;
     }
 
+    if (currentState == NARUKAMI_GUARD_AIR) {
+        ApplyGravity(steps);
+        maxFrame = GetMaxFrameForState(NARUKAMI_GUARD_AIR);
+        AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, kLoopSlowTicks, maxFrame);
+
+        if (!IsHoldingGuardInput(*this)) {
+            if (IsOnGround()) {
+                jumpCount = 0;
+                verticalVelocity = 0.0f;
+                position.y = CHARACTER_GROUND_Y;
+                CompleteToStance();
+            }
+            else {
+                EnterState(NARUKAMI_JUMP);
+            }
+        }
+        else if (IsOnGround() && verticalVelocity >= 0.0f) {
+            jumpCount = 0;
+            verticalVelocity = 0.0f;
+            position.y = CHARACTER_GROUND_Y;
+            EnterState(NARUKAMI_GUARD);
+        }
+
+        ClampMakotoCenterX(position.x);
+        UpdateScaledHurtbox();
+        return;
+    }
+
     if (currentState == NARUKAMI_JUMP) {
         bool isLeftPressed = IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
         bool isRightPressed = IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
@@ -1137,6 +1192,12 @@ void Narukami::UpdateHuman(int steps) {
         else if (isRightPressed) {
             facingDirection = 1;
             jumpHorizontalSpeed = currentVelocity * kAirControlMultiplier;
+        }
+
+        if (IsHoldingGuardInput(*this)) {
+            HoldGuardState(true);
+            UpdateScaledHurtbox();
+            return;
         }
 
         if (isAttackPressed) {
@@ -1257,7 +1318,7 @@ void Narukami::UpdateHuman(int steps) {
     const bool isJumpPressed = IsGameKeyDown(DIK_SPACE);
     const bool isDashHeld = IsGameKeyDown(DIK_J);
     const bool isAttackPressed = attackJustPressed;
-    const bool isGuardPressed = IsGameKeyDown(DIK_I);
+    const bool isGuardPressed = IsHoldingGuardInput(*this);
     const bool isCrouchPressed = IsGameKeyDown(DIK_C);
     const bool isBigGamblePressed = IsGameKeyDown(DIK_E);
     const bool isCrossSlashPressed = IsGameKeyDown(DIK_R);
@@ -1371,7 +1432,7 @@ void Narukami::UpdateHuman(int steps) {
         showIzanagi = false;
     }
     else if (isGuardPressed) {
-        nextState = NARUKAMI_GUARD;
+        nextState = IsOnGround() ? NARUKAMI_GUARD : NARUKAMI_GUARD_AIR;
     }
     else if (isCrouchPressed && !isMoving) {
         nextState = NARUKAMI_CROUCH;
@@ -1407,6 +1468,7 @@ void Narukami::UpdateHuman(int steps) {
         AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, kLoopFastTicks, maxFrame);
         break;
     case NARUKAMI_GUARD:
+    case NARUKAMI_GUARD_AIR:
         AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, kLoopSlowTicks, maxFrame);
         break;
     case NARUKAMI_CROUCH:
@@ -1438,12 +1500,32 @@ void Narukami::Update() {
         const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+
+        if (currentState == NARUKAMI_LOSE) {
+            const int knockdownFrames = g_Damage.maxFrame;
+            if (knockdownFrames > 0) {
+                maxFrame = knockdownFrames;
+            }
+            if (currentFrame < maxFrame - 1) {
+                AdvanceOneShotFrame(
+                    animAccumulator,
+                    currentFrame,
+                    animSteps,
+                    BATTLE_LOSE_ANIM_TICKS,
+                    maxFrame);
+            }
+            else {
+                currentFrame = maxFrame - 1;
+            }
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
         }
-        else {
-            currentFrame = maxFrame - 1;
+        else if (currentState == NARUKAMI_WIN) {
+            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+            position.y = CHARACTER_GROUND_Y;
+            verticalVelocity = 0.0f;
         }
+
         UpdateScaledHurtbox();
         return;
     }
@@ -1535,6 +1617,26 @@ void Narukami::Render(LPD3DXSPRITE sprite) {
     // Sword hilt flies behind during discard (draw behind body).
     if (currentState == NARUKAMI_INTRO_DISCARD && discardFlying && g_IntroEffect.texture) {
         DrawLayer(sprite, g_IntroEffect, currentFrame, discardPos, facingDirection, 1.0f, color, NARUKAMI_STANCE_FEET_Y);
+    }
+
+    if (currentState == NARUKAMI_WIN && g_IzanagiWin.texture && g_IzanagiWin.maxFrame > 0) {
+        int winFrame = currentFrame;
+        if (winFrame >= g_IzanagiWin.maxFrame) {
+            winFrame = g_IzanagiWin.maxFrame - 1;
+        }
+        const D3DXVECTOR3 izPos(
+            position.x - (float)facingDirection * kIzanagiBehindX,
+            position.y - kIzanagiBehindY,
+            0.0f);
+        DrawLayer(
+            sprite,
+            g_IzanagiWin,
+            winFrame,
+            izPos,
+            facingDirection,
+            kPersonaDrawScale,
+            color,
+            NARUKAMI_STANCE_FEET_Y);
     }
 
     // Body — during discard keep stance pose on the fighter while hilt flies away.
@@ -1647,9 +1749,19 @@ void Narukami::RenderDebugHitbox(LPD3DXSPRITE sprite) {
 void Narukami::TakeDamage(int damage) {
     if (isDead) return;
 
+    int appliedDamage = damage;
+    if (TryProcessGuardBlock(*this, damage, appliedDamage)) {
+        if (appliedDamage > 0) {
+            health -= appliedDamage;
+            if (health < 0) health = 0;
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
     if (!IsHumanControlled()) {
         // Always apply HP; only skip re-starting damage anim while already downed.
-        health -= damage;
+        health -= appliedDamage;
         if (health < 0) health = 0;
         if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER) {
             BeginHitReaction();
@@ -1660,7 +1772,7 @@ void Narukami::TakeDamage(int damage) {
         return;
     }
 
-    health -= damage;
+    health -= appliedDamage;
     if (health < 0) health = 0;
     if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER && !IsSummonState(currentState)) {
         BeginHitReaction();
@@ -1673,6 +1785,18 @@ void Narukami::TakeDamage(int damage) {
     if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
         isDead = true;
     }
+}
+
+bool Narukami::IsInGuardState() const {
+    return currentState == NARUKAMI_GUARD || currentState == NARUKAMI_GUARD_AIR;
+}
+
+void Narukami::HoldGuardState(bool airborne) {
+    const int target = airborne ? NARUKAMI_GUARD_AIR : NARUKAMI_GUARD;
+    if (currentState == target) {
+        return;
+    }
+    EnterState(target);
 }
 
 void Narukami::ApplySkillDamage(int damage) {
@@ -1715,12 +1839,17 @@ void Narukami::BeginDefeatPose() {
     showIzanagi = false;
     showEffect = false;
     currentState = NARUKAMI_LOSE;
-    currentFrame = 0;
     animAccumulator = 0;
-    maxFrame = GetMaxFrameForState(NARUKAMI_LOSE);
-    if (maxFrame < 1) maxFrame = 1;
+    damageGroundHold = 0;
+    currentFrame = 0;
+
+    const int knockdownFrames = g_Damage.maxFrame;
+    maxFrame = (knockdownFrames > 0) ? knockdownFrames : 1;
+
+    // Stay at current X; play knockdown on the ground where the fighter fell.
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
+    jumpCount = 0;
     UpdateScaledHurtbox();
 }
 
@@ -1801,7 +1930,8 @@ bool LoadNarukamiTextures() {
         { &g_AirAttack, "assets/narukami/air_combo.png", 14 },
         { &g_Damage, "assets/narukami/damage.png", 7 },
         { &g_Recover, "assets/narukami/recover.png", 3 },
-        { &g_Win, "assets/narukami/win.png", 0 },
+        { &g_Win, "assets/narukami/win.png", 12 },
+        { &g_IzanagiWin, "assets/narukami/izanagi_win.png", 12 },
         { &g_Intro, "assets/narukami/intro.png", 13 },
         { &g_IntroEffect, "assets/narukami/intro_effect.png", 2 },
         { &g_Taunt, "assets/narukami/taunt.png", 7 },
@@ -1831,6 +1961,11 @@ bool LoadNarukamiTextures() {
             return false;
         }
     }
+
+    if (!LoadSheet(g_GuardAir, "assets/narukami/guard_air.png", 3)) {
+        g_GuardAir = g_Guard;
+    }
+
     return true;
 }
 
@@ -1842,6 +1977,9 @@ void CleanUpNarukamiTextures() {
     ReleaseSheet(g_Jump);
     ReleaseSheet(g_Crouch);
     ReleaseSheet(g_Guard);
+    if (g_GuardAir.texture && g_GuardAir.texture != g_Guard.texture) {
+        ReleaseSheet(g_GuardAir);
+    }
     ReleaseSheet(g_Attack);
     ReleaseSheet(g_SideAttack);
     ReleaseSheet(g_UpAttack);
@@ -1850,6 +1988,7 @@ void CleanUpNarukamiTextures() {
     ReleaseSheet(g_Damage);
     ReleaseSheet(g_Recover);
     ReleaseSheet(g_Win);
+    ReleaseSheet(g_IzanagiWin);
     ReleaseSheet(g_Intro);
     ReleaseSheet(g_IntroEffect);
     ReleaseSheet(g_Taunt);

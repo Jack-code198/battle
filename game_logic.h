@@ -64,9 +64,18 @@ extern bool g_BattlePlayer1Won;
 
 void ResetBattleFlow();
 void UpdateBattleFlow();
+bool ConsumeBattleFinishedExit();
 bool IsBattleCombatActive();
 bool IsBattleInputAllowed();
 const char* GetBattleCountdownLabel();
 bool ShouldShowBattleKo();
+bool IsBattleEndSequence();
 bool IsHumanPlayerEngaged();
 void ApplyBattleRenderTints();
+
+// Guard: hold direction away from the opponent (not toward them).
+int GetGuardAwayDirection(const Fighter& self);
+int GetGuardTowardDirection(const Fighter& self);
+bool IsHoldingGuardInput(const Fighter& self);
+bool IsFighterAirborne(const Fighter& self);
+bool TryProcessGuardBlock(Fighter& defender, int rawDamage, int& appliedDamage);

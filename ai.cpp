@@ -5,8 +5,154 @@
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
+#include "player/yosuke/Yosuke.h"
 #include <cstdlib>
 #include <cmath>
+
+struct AiBrain {
+    static void SetToward(float deltaX) {
+        if (deltaX > 0.0f) {
+            SetAiKeyDown(DIK_D, true);
+            SetAiKeyDown(DIK_RIGHT, true);
+        }
+        else {
+            SetAiKeyDown(DIK_A, true);
+            SetAiKeyDown(DIK_LEFT, true);
+        }
+    }
+
+    static void SetAway(const Fighter& self) {
+        const int away = GetGuardAwayDirection(self);
+        if (away < 0) {
+            SetAiKeyDown(DIK_LEFT, true);
+            SetAiKeyDown(DIK_A, true);
+        }
+        else {
+            SetAiKeyDown(DIK_RIGHT, true);
+            SetAiKeyDown(DIK_D, true);
+        }
+    }
+
+    static void PickAttackMode(Fighter& cpu) {
+        const int roll = rand() % 100;
+        if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT) {
+            cpu.aiAttackMode = 1; // E — held key, reliable for CPU
+        }
+        else if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT + 15) {
+            cpu.aiAttackMode = 2; // R
+        }
+        else {
+            cpu.aiAttackMode = 0; // LMB tap
+        }
+    }
+
+    static void FireAttackInput(Fighter& cpu) {
+        if (cpu.aiAttackMode == 1) {
+            SetAiKeyDown(DIK_E, true);
+        }
+        else if (cpu.aiAttackMode == 2) {
+            SetAiKeyDown(DIK_R, true);
+        }
+        else {
+            // Fighters use edge-detect for LMB — single-frame tap only.
+            SetAiMouseLeftDown(true);
+        }
+    }
+
+    static void BeginAttack(Fighter& cpu) {
+        PickAttackMode(cpu);
+        cpu.aiAttackCooldown = AI_ATTACK_COOLDOWN_STEPS;
+        cpu.aiAttackPulse = (cpu.aiAttackMode == 0)
+            ? AI_ATTACK_PULSE_STEPS
+            : AI_SKILL_ATTACK_PULSE_STEPS;
+        cpu.aiMovePulse = 0;
+        cpu.aiMoveIntent = 0;
+    }
+
+    static void TryAttack(Fighter& cpu) {
+        if (cpu.aiAttackCooldown > 0) return;
+        BeginAttack(cpu);
+        FireAttackInput(cpu);
+    }
+
+    static void MaintainSpacing(Fighter& cpu, float distanceX) {
+        if (distanceX < AI_SPACING_RANGE) {
+            SetAway(cpu);
+        }
+    }
+
+    static void Tick(Fighter& cpu) {
+        Fighter* enemy = GetOpponent(cpu);
+        if (!enemy || enemy->IsDead() || cpu.IsDead()) return;
+        if (!IsBattleInputAllowed()) {
+            ClearAiInput();
+            return;
+        }
+
+        ClearAiInput();
+
+        const float deltaX = enemy->GetPosition().x - cpu.GetPosition().x;
+        const float distanceX = fabsf(deltaX);
+
+        if (cpu.aiAttackCooldown > 0) --cpu.aiAttackCooldown;
+        if (cpu.aiJumpCooldown > 0) --cpu.aiJumpCooldown;
+
+        if (cpu.aiAttackPulse > 0) {
+            --cpu.aiAttackPulse;
+            FireAttackInput(cpu);
+            return;
+        }
+
+        if (!IsHumanPlayerEngaged()) {
+            cpu.aiMovePulse = 0;
+            cpu.aiMoveIntent = 0;
+            MaintainSpacing(cpu, distanceX);
+            return;
+        }
+
+        const bool inMeleeRange = distanceX <= AI_ATTACK_RANGE;
+        const bool canApproach = distanceX > (AI_ATTACK_RANGE + AI_APPROACH_STOP_GAP);
+
+        if (inMeleeRange) {
+            TryAttack(cpu);
+            if (cpu.aiAttackPulse <= 0) {
+                MaintainSpacing(cpu, distanceX);
+            }
+            return;
+        }
+
+        if (canApproach) {
+            if (cpu.aiMovePulse <= 0) {
+                cpu.aiMoveIntent = (distanceX > AI_RUN_RANGE) ? 2 : 1;
+                cpu.aiMovePulse = AI_APPROACH_BURST_STEPS + (rand() % 4);
+            }
+            else {
+                --cpu.aiMovePulse;
+            }
+
+            SetToward(deltaX);
+            if (cpu.aiMoveIntent == 2) {
+                SetAiKeyDown(DIK_LSHIFT, true);
+            }
+
+            if (cpu.aiJumpCooldown <= 0 &&
+                distanceX > AI_ATTACK_RANGE &&
+                distanceX < AI_ENGAGE_RANGE &&
+                (rand() % 100) < AI_JUMP_CHANCE_PERCENT) {
+                SetAiKeyDown(DIK_SPACE, true);
+                cpu.aiJumpCooldown = AI_JUMP_COOLDOWN_STEPS;
+            }
+            return;
+        }
+
+        // Spacing band: close enough to fight, stop running in.
+        cpu.aiMovePulse = 0;
+        TryAttack(cpu);
+        if (cpu.aiAttackPulse <= 0) {
+            MaintainSpacing(cpu, distanceX);
+        }
+    }
+};
 
 bool IsCpuLockedInReaction(const Fighter& cpuFighter, int currentState) {
     if (cpuFighter.IsHit()) return true;
@@ -33,83 +179,17 @@ bool IsCpuLockedInReaction(const Fighter& cpuFighter, int currentState) {
             currentState == NARUKAMI_RECOVER ||
             currentState == NARUKAMI_WIN ||
             currentState == NARUKAMI_LOSE;
+    case Char_Yosuke:
+        return currentState == YOSUKE_INTRO ||
+            currentState == YOSUKE_DAMAGE ||
+            currentState == YOSUKE_RECOVER ||
+            currentState == YOSUKE_WIN ||
+            currentState == YOSUKE_LOSE;
     default:
         return false;
     }
 }
 
 void DriveSimpleAi(Fighter& cpuFighter) {
-    Fighter* enemy = GetOpponent(cpuFighter);
-    if (!enemy || enemy->IsDead() || cpuFighter.IsDead()) return;
-    if (!IsBattleInputAllowed()) {
-        ClearAiInput();
-        return;
-    }
-
-    ClearAiInput();
-
-    // Passiveive AI: if the human is idle, CPU stays idle too.
-    if (!IsHumanPlayerEngaged()) {
-        return;
-    }
-
-    if (cpuFighter.aiAttackCooldown > 0) --cpuFighter.aiAttackCooldown;
-    if (cpuFighter.aiJumpCooldown > 0) --cpuFighter.aiJumpCooldown;
-    if (cpuFighter.aiAttackPulse > 0) --cpuFighter.aiAttackPulse;
-
-    const float deltaX = enemy->GetPosition().x - cpuFighter.GetPosition().x;
-    const float distanceX = fabsf(deltaX);
-
-    // Close the gap: walk / run toward the opponent.
-    if (distanceX > AI_ATTACK_RANGE) {
-        if (deltaX > 0.0f) {
-            SetAiKeyDown(DIK_D, true);
-            SetAiKeyDown(DIK_RIGHT, true);
-        }
-        else {
-            SetAiKeyDown(DIK_A, true);
-            SetAiKeyDown(DIK_LEFT, true);
-        }
-        if (distanceX > AI_RUN_RANGE) {
-            SetAiKeyDown(DIK_LSHIFT, true);
-        }
-    }
-
-    // Start a new attack when in range and off cooldown.
-    if (distanceX <= AI_ATTACK_RANGE && cpuFighter.aiAttackCooldown <= 0) {
-        cpuFighter.aiAttackCooldown = AI_ATTACK_COOLDOWN_STEPS;
-        cpuFighter.aiAttackPulse = AI_ATTACK_PULSE_STEPS;
-        const int roll = rand() % 100;
-        if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT) {
-            cpuFighter.aiAttackMode = 1; // E
-        }
-        else if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT * 2) {
-            cpuFighter.aiAttackMode = 2; // R
-        }
-        else {
-            cpuFighter.aiAttackMode = 0; // LMB
-        }
-    }
-
-    // Hold the chosen attack for a few steps (edge-detect sees a press).
-    if (cpuFighter.aiAttackPulse > 0) {
-        if (cpuFighter.aiAttackMode == 1) {
-            SetAiKeyDown(DIK_E, true);
-        }
-        else if (cpuFighter.aiAttackMode == 2) {
-            SetAiKeyDown(DIK_R, true);
-        }
-        else {
-            SetAiMouseLeftDown(true);
-        }
-    }
-
-    // Occasional jump when mid-range.
-    if (cpuFighter.aiJumpCooldown <= 0 &&
-        distanceX < AI_ENGAGE_RANGE &&
-        distanceX > AI_ATTACK_RANGE * 0.5f &&
-        (rand() % 100) < AI_JUMP_CHANCE_PERCENT) {
-        SetAiKeyDown(DIK_SPACE, true);
-        cpuFighter.aiJumpCooldown = AI_JUMP_COOLDOWN_STEPS;
-    }
+    AiBrain::Tick(cpuFighter);
 }

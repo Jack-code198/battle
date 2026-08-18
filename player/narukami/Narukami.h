@@ -20,6 +20,7 @@ enum NarukamiState {
     NARUKAMI_CROUCH,
     NARUKAMI_CROUCH_ATTACK,
     NARUKAMI_GUARD,
+    NARUKAMI_GUARD_AIR,
     NARUKAMI_SIDE_ATTACK,
     NARUKAMI_ATTACK_UP,
     NARUKAMI_DOWN_ATTACK,
@@ -101,6 +102,8 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInCombatAction() const override;
+    bool IsInGuardState() const override;
+    void HoldGuardState(bool airborne) override;
 
     bool IsSuperMoveActive() const override;
     D3DCOLOR GetOverlayColor() const override;

@@ -7,6 +7,7 @@
 static LPDIRECT3DTEXTURE9 g_MakotoIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_JokerIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_NarukamiIconTex = nullptr;
+static LPDIRECT3DTEXTURE9 g_YosukeIconTex = nullptr;
 static ID3DXFont* g_HudFont = nullptr;
 static ID3DXFont* g_BannerFont = nullptr;
 static bool g_HudFontLoaded = false;
@@ -25,7 +26,8 @@ enum HudIconColorKey {
     HUD_ICON_NO_COLORKEY = 0,
     HUD_ICON_PERSONA_BLUE,
     HUD_ICON_JOKER_RED,
-    HUD_ICON_NARUKAMI_YELLOW
+    HUD_ICON_NARUKAMI_YELLOW,
+    HUD_ICON_YOSUKE_YELLOW
 };
 
 static bool LoadHudFont() {
@@ -111,7 +113,7 @@ void DrawBattleRoundOverlay() {
 }
 
 void DrawBattleTimerOverlay() {
-    if (!IsBattleCombatActive() || IsTutorialBattleMode()) return;
+    if (!IsBattleCombatActive() || IsTutorialBattleMode() || IsBattleEndSequence()) return;
     if (!LoadHudFont() || !g_HudFont) return;
 
     const int seconds = (g_BattleTimeRemainingSteps + 59) / 60;
@@ -138,9 +140,19 @@ void DrawBattleTimerOverlay() {
 }
 
 void DrawBattleFadeOverlay(LPD3DXSPRITE sprite) {
-    if (!sprite || g_BattleFlowPhase != BattleFlowPhase::FadeOut) return;
+    if (!sprite) return;
 
-    int alpha = (int)(255.0f * (float)g_BattleFlowTimer / (float)BATTLE_FADE_OUT_STEPS);
+    int alpha = 0;
+    if (g_BattleFlowPhase == BattleFlowPhase::FadeOut) {
+        alpha = (int)(255.0f * (float)g_BattleFlowTimer / (float)BATTLE_FADE_OUT_STEPS);
+    }
+    else if (g_BattleFlowPhase == BattleFlowPhase::Finished) {
+        alpha = 255;
+    }
+    else {
+        return;
+    }
+
     if (alpha < 0) alpha = 0;
     if (alpha > 255) alpha = 255;
     DrawDebugRect(
@@ -185,6 +197,9 @@ static bool LoadHudIconTexture(const char* path, LPDIRECT3DTEXTURE9* outTex, Hud
     else if (colorKey == HUD_ICON_NARUKAMI_YELLOW) {
         keyColor = D3DCOLOR_XRGB(NARUKAMI_COLORKEY_R, NARUKAMI_COLORKEY_G, NARUKAMI_COLORKEY_B);
     }
+    else if (colorKey == HUD_ICON_YOSUKE_YELLOW) {
+        keyColor = D3DCOLOR_XRGB(YOSUKE_COLORKEY_R, YOSUKE_COLORKEY_G, YOSUKE_COLORKEY_B);
+    }
 
     HRESULT hr = D3DXCreateTextureFromFileEx(
         g_pD3DDevice,
@@ -214,6 +229,9 @@ static bool LoadHudIconTexture(const char* path, LPDIRECT3DTEXTURE9* outTex, Hud
     }
     else if (colorKey == HUD_ICON_NARUKAMI_YELLOW) {
         ApplyNarukamiColorKey(*outTex);
+    }
+    else if (colorKey == HUD_ICON_YOSUKE_YELLOW) {
+        ApplyYosukeColorKey(*outTex);
     }
 
     return true;
@@ -408,6 +426,7 @@ static LPDIRECT3DTEXTURE9 GetHudIconForCharacter(CharacterId id) {
     switch (id) {
     case Char_Joker: return g_JokerIconTex;
     case Char_Narukami: return g_NarukamiIconTex;
+    case Char_Yosuke: return g_YosukeIconTex;
     case Char_Makoto:
     default: return g_MakotoIconTex;
     }
@@ -418,7 +437,8 @@ bool LoadHudTextures() {
     bool makotoOk = LoadHudIconTexture("assets/makoto/makoto_icon.png", &g_MakotoIconTex, HUD_ICON_PERSONA_BLUE);
     bool jokerOk = LoadHudIconTexture("assets/joker/joker_icon.png", &g_JokerIconTex, HUD_ICON_JOKER_RED);
     bool narukamiOk = LoadHudIconTexture("assets/narukami/narukami_icon.png", &g_NarukamiIconTex, HUD_ICON_NARUKAMI_YELLOW);
-    return makotoOk || jokerOk || narukamiOk;
+    bool yosukeOk = LoadHudIconTexture("assets/yosuke/yosuke_icon.png", &g_YosukeIconTex, HUD_ICON_YOSUKE_YELLOW);
+    return makotoOk || jokerOk || narukamiOk || yosukeOk;
 }
 
 void CleanUpHudTextures() {
@@ -446,6 +466,10 @@ void CleanUpHudTextures() {
     if (g_NarukamiIconTex) {
         g_NarukamiIconTex->Release();
         g_NarukamiIconTex = nullptr;
+    }
+    if (g_YosukeIconTex) {
+        g_YosukeIconTex->Release();
+        g_YosukeIconTex = nullptr;
     }
 }
 
