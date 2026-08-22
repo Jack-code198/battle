@@ -25,6 +25,7 @@ enum class BattleMode {
 
 extern BattleMode g_SelectedBattleMode;
 bool IsTutorialBattleMode();
+void BeginBattleLogicFrame();
 void ApplyTutorialModePerks(int steps);
 
 Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled);
@@ -64,6 +65,7 @@ extern bool g_BattlePlayer1Won;
 
 void ResetBattleFlow();
 void UpdateBattleFlow();
+void EnsureBattleResultPosesApplied();
 bool ConsumeBattleFinishedExit();
 bool IsBattleCombatActive();
 bool IsBattleInputAllowed();

@@ -21,11 +21,20 @@ bool IsTutorialBattleMode() {
     return g_SelectedBattleMode == BattleMode::Tutorial;
 }
 
+void BeginBattleLogicFrame() {
+    g_GameTimer.SetLogicSteps(BATTLE_LOGIC_STEPS_PER_FRAME);
+}
+
 static int g_TutorialRecoverIdleFrames[2] = { 0, 0 };
 
 static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
     const int slot = fighter.GetPlayerSlot();
     if (slot < 0 || slot > 1) return;
+
+    if (fighter.health <= 0 || fighter.IsDead()) {
+        g_TutorialRecoverIdleFrames[slot] = 0;
+        return;
+    }
 
     if (fighter.IsHumanControlled()) {
         fighter.sp = fighter.maxSp;
@@ -41,7 +50,6 @@ static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
     if (g_TutorialRecoverIdleFrames[slot] < TRAINING_HEAL_IDLE_FRAMES) return;
 
     fighter.health = fighter.maxHealth;
-    fighter.isDead = false;
     SyncBattleHudHealth(slot + 1, fighter.health, fighter.maxHealth);
     if (fighter.IsHumanControlled()) {
         fighter.RefillStamina();
@@ -50,9 +58,8 @@ static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
 }
 
 void ApplyTutorialModePerks(int steps) {
-    if (!IsTutorialBattleMode()) return;
-    if (steps <= 0) steps = 1;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
+    if (!IsTutorialBattleMode() || !IsBattleCombatActive() || IsBattleEndSequence()) return;
+    if (steps <= 0) steps = BATTLE_LOGIC_STEPS_PER_FRAME;
 
     if (g_Player1) ApplyTutorialPerksForFighter(*g_Player1, steps);
     if (g_Player2) ApplyTutorialPerksForFighter(*g_Player2, steps);
@@ -310,9 +317,11 @@ void EnforceFighterGroundSeparation(Fighter& a, Fighter& b) {
 }
 
 static bool g_BattleExitHandled = false;
+static bool g_BattleResultPosesApplied = false;
 
 static void ApplyBattleResultPoses() {
-    if (!g_Player1 || !g_Player2) return;
+    if (g_BattleResultPosesApplied || !g_Player1 || !g_Player2) return;
+    g_BattleResultPosesApplied = true;
 
     if (g_BattlePlayer1Won) {
         g_Player1->BeginVictoryPose();
@@ -324,8 +333,29 @@ static void ApplyBattleResultPoses() {
     }
 }
 
+void EnsureBattleResultPosesApplied() {
+    if (g_BattleResultPosesApplied || !g_Player1 || !g_Player2) return;
+
+    const bool p1Dead = g_Player1->IsDead();
+    const bool p2Dead = g_Player2->IsDead();
+    if (!p1Dead && !p2Dead) return;
+
+    g_BattlePlayer1Won = p2Dead && !p1Dead;
+    if (p1Dead && p2Dead) {
+        g_BattlePlayer1Won = false;
+    }
+
+    if (g_BattleFlowPhase == BattleFlowPhase::Fight) {
+        g_BattleFlowPhase = BattleFlowPhase::Knockout;
+        g_BattleFlowTimer = 0;
+    }
+
+    ApplyBattleResultPoses();
+}
+
 void ResetBattleFlow() {
     g_BattleExitHandled = false;
+    g_BattleResultPosesApplied = false;
     g_TutorialRecoverIdleFrames[0] = 0;
     g_TutorialRecoverIdleFrames[1] = 0;
 
@@ -412,6 +442,8 @@ int GetGuardTowardDirection(const Fighter& self) {
 }
 
 // Hold direction toward the opponent to guard (face them while blocking).
+// Walk/run use the same direction keys when approaching — fighters must prefer
+// locomotion over guard whenever isMoving is true (see each fighter's state machine).
 bool IsHoldingGuardInput(const Fighter& self) {
     const int toward = GetGuardTowardDirection(self);
     if (toward < 0) {
@@ -447,8 +479,7 @@ bool TryProcessGuardBlock(Fighter& defender, int rawDamage, int& appliedDamage) 
 
 void UpdateBattleFlow() {
     int steps = g_GameTimer.GetLastFramesToUpdate();
-    if (steps <= 0) steps = 1;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
+    if (steps <= 0) steps = BATTLE_LOGIC_STEPS_PER_FRAME;
 
     switch (g_BattleFlowPhase) {
     case BattleFlowPhase::Countdown:
@@ -491,9 +522,6 @@ void UpdateBattleFlow() {
         }
 
         if (g_Player1 && g_Player2 && (g_Player1->IsDead() || g_Player2->IsDead())) {
-            if (IsTutorialBattleMode()) {
-                break;
-            }
             g_BattlePlayer1Won = g_Player2->IsDead() && !g_Player1->IsDead();
             if (g_Player1->IsDead() && g_Player2->IsDead()) {
                 g_BattlePlayer1Won = false;

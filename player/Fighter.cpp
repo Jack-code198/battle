@@ -24,6 +24,8 @@ Fighter::Fighter()
     , hitStunTimer(0)
     , isDead(false)
     , velocity(JOKER_MOVE_SPEED)
+    , resultPoseAnimLocked(false)
+    , resultPoseHoldFrame(-1)
     , spriteTint(D3DCOLOR_XRGB(255, 255, 255)) {
     position = D3DXVECTOR3(0, 0, 0);
     hurtbox = { 0, 0, 0, 0 };
@@ -43,7 +45,7 @@ void Fighter::ApplyPhysicsGravitySteps(int steps, float& verticalVelocityIO) {
         PhysicsWorld::IntegrateGravityOnGround(
             physicsBody,
             CHARACTER_GROUND_Y,
-            GRAVITY,
+            GRAVITY * BATTLE_GAMEPLAY_SPEED,
             1.0f);
     }
 
@@ -69,6 +71,7 @@ void Fighter::UpdateScaledHurtbox() {
 
 void Fighter::TryApplyHorizontalDelta(float deltaX) {
     if (deltaX == 0.0f) return;
+    deltaX *= BATTLE_GAMEPLAY_SPEED;
 
     Fighter* opponent = GetOpponent(*this);
     if (!opponent || opponent->IsDead()) {

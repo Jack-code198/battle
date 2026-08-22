@@ -66,10 +66,10 @@ inline constexpr int OPPONENT_DAMAGE_ANIM_TICKS = 5;
 inline constexpr int JOKER_INTRO_TICKS = 6;
 inline constexpr int JOKER_IDLE_ANIM_TICKS = 8;
 // Recover only has 3 frames — give each frame enough time to read.
-inline constexpr int JOKER_RECOVER_ANIM_TICKS = 10;
-// Damage / knockdown timing (snappier hit + get-up).
+inline constexpr int JOKER_RECOVER_ANIM_TICKS = 7;
+// Damage / knockdown timing.
 inline constexpr int JOKER_DAMAGE_ANIM_TICKS = 4;
-inline constexpr int JOKER_DAMAGE_GROUND_HOLD_TICKS = 16;
+inline constexpr int JOKER_DAMAGE_GROUND_HOLD_TICKS = 10;
 // Same wait idea as Makoto before leaving stance for idle (~10s at 60fps).
 inline constexpr int JOKER_IDLE_WAIT_FRAMES = 600;
 
@@ -103,6 +103,169 @@ inline constexpr float GROUND_NEAR_EPSILON = 2.0f;
 inline constexpr float BODY_COLLISION_EPSILON = 0.5f;
 inline constexpr float BODY_MOVE_SUBSTEP = 10.0f;
 
+inline void PinFighterToGround(D3DXVECTOR3& position, float& verticalVelocity) {
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+}
+
+inline bool IsFighterAtGroundLevel(const D3DXVECTOR3& position) {
+    return position.y >= CHARACTER_GROUND_Y - GROUND_CONTACT_EPSILON;
+}
+
+inline bool IsFighterPinnedToGround(const D3DXVECTOR3& position, float verticalVelocity) {
+    return IsFighterAtGroundLevel(position) && verticalVelocity >= 0.0f;
+}
+
+inline float SampleFeetYTable(const float* values, int count, int frameIndex) {
+    if (!values || count <= 0) return 0.0f;
+    if (frameIndex < 0) frameIndex = 0;
+    if (frameIndex >= count) frameIndex = count - 1;
+    return values[frameIndex];
+}
+
+// Measured sole/back contact rows inside each 256px damage/recover cell.
+// Knockdown lying frames sit near the TOP of the cell — use low row values (~100-140).
+inline constexpr float MAKOTO_DAMAGE_FEET_Y[] = { 115.0f, 128.0f, 138.0f };
+inline constexpr float MAKOTO_RECOVER_FEET_Y_TABLE[] = { 82.0f, 96.0f, 112.0f, 138.0f };
+inline constexpr float MAKOTO_KNOCKDOWN_GROUND_FEET_Y = 138.0f;
+
+inline constexpr float JOKER_DAMAGE_FEET_Y[] = { 228.0f, 205.0f, 188.0f, 172.0f, 158.0f, 108.0f };
+inline constexpr float JOKER_RECOVER_FEET_Y_TABLE[] = { 238.0f, 198.0f, 56.0f };
+inline constexpr float JOKER_KNOCKDOWN_GROUND_FEET_Y = 108.0f;
+
+inline constexpr float NARUKAMI_DAMAGE_FEET_Y[] = { 228.0f, 210.0f, 198.0f, 185.0f, 172.0f, 128.0f, 108.0f };
+inline constexpr float NARUKAMI_RECOVER_FEET_Y_TABLE[] = { 238.0f, 212.0f, 56.0f };
+inline constexpr float NARUKAMI_KNOCKDOWN_GROUND_FEET_Y = 108.0f;
+
+inline constexpr float YOSUKE_DAMAGE_FEET_Y[] = { 232.0f, 228.0f, 220.0f, 210.0f, 145.0f, 130.0f, 112.0f };
+inline constexpr float YOSUKE_RECOVER_FEET_Y_TABLE[] = { 92.0f, 108.0f, 52.0f, 52.0f, 52.0f };
+inline constexpr float YOSUKE_KNOCKDOWN_GROUND_FEET_Y = 112.0f;
+
+inline constexpr float FIGHTER_DAMAGE_POP_VELOCITY = -6.5f;
+
+inline void ApplyStandardHitReactionVertical(D3DXVECTOR3& position, float& verticalVelocity, bool /*onGround*/) {
+    // Knockdown always plays on the floor — no launch pop.
+    PinFighterToGround(position, verticalVelocity);
+}
+
+inline float GetGroundedDamageDrawFeetY(const float* airFeetY, int airCount, int /*frameIndex*/, float /*groundedFeetY*/) {
+    return SampleFeetYTable(airFeetY, airCount, airCount - 1);
+}
+
+// Scan a sprite-sheet frame for the lowest opaque row (after color-key).
+// Use as draw feetY so the silhouette bottom sits on CHARACTER_GROUND_Y.
+inline float MeasureTextureFrameBottomY(
+    LPDIRECT3DTEXTURE9 tex,
+    int frameIndex,
+    int cellW,
+    int cellH,
+    int cols)
+{
+    if (!tex || cellW <= 0 || cellH <= 0 || cols <= 0) {
+        return (float)((cellH > 0) ? (cellH - 1) : 0);
+    }
+
+    D3DSURFACE_DESC desc;
+    if (FAILED(tex->GetLevelDesc(0, &desc))) {
+        return (float)(cellH - 1);
+    }
+
+    D3DLOCKED_RECT locked;
+    if (FAILED(tex->LockRect(0, &locked, NULL, 0))) {
+        return (float)(cellH - 1);
+    }
+
+    const int col = frameIndex % cols;
+    const int row = frameIndex / cols;
+    const int xStart = col * cellW;
+    const int yStart = row * cellH;
+    const int xEnd = (xStart + cellW < (int)desc.Width) ? (xStart + cellW) : (int)desc.Width;
+    const int yEnd = (yStart + cellH < (int)desc.Height) ? (yStart + cellH) : (int)desc.Height;
+
+    int bottomLocal = -1;
+    for (int y = yEnd - 1; y >= yStart; --y) {
+        DWORD* rowPixels = (DWORD*)((BYTE*)locked.pBits + y * locked.Pitch);
+        for (int x = xStart; x < xEnd; ++x) {
+            if ((rowPixels[x] & 0xFF000000) != 0) {
+                bottomLocal = y - yStart;
+                break;
+            }
+        }
+        if (bottomLocal >= 0) {
+            break;
+        }
+    }
+
+    tex->UnlockRect(0);
+    return (bottomLocal >= 0) ? (float)bottomLocal : (float)(cellH - 1);
+}
+
+inline bool TextureFrameHasVisiblePixels(
+    LPDIRECT3DTEXTURE9 tex,
+    int frameIndex,
+    int cellW,
+    int cellH,
+    int cols)
+{
+    if (!tex || cellW <= 0 || cellH <= 0 || cols <= 0) {
+        return false;
+    }
+
+    D3DSURFACE_DESC desc;
+    if (FAILED(tex->GetLevelDesc(0, &desc))) {
+        return false;
+    }
+
+    D3DLOCKED_RECT locked;
+    if (FAILED(tex->LockRect(0, &locked, NULL, 0))) {
+        return false;
+    }
+
+    const int col = frameIndex % cols;
+    const int row = frameIndex / cols;
+    const int xStart = col * cellW;
+    const int yStart = row * cellH;
+    const int xEnd = (xStart + cellW < (int)desc.Width) ? (xStart + cellW) : (int)desc.Width;
+    const int yEnd = (yStart + cellH < (int)desc.Height) ? (yStart + cellH) : (int)desc.Height;
+
+    bool visible = false;
+    for (int y = yStart; y < yEnd && !visible; ++y) {
+        DWORD* rowPixels = (DWORD*)((BYTE*)locked.pBits + y * locked.Pitch);
+        for (int x = xStart; x < xEnd; ++x) {
+            if ((rowPixels[x] & 0xFF000000) != 0) {
+                visible = true;
+                break;
+            }
+        }
+    }
+
+    tex->UnlockRect(0);
+    return visible;
+}
+
+// Win sheets often pad with blank tail frames — hold the last frame that has pixels.
+inline int FindLastVisibleSheetFrame(
+    LPDIRECT3DTEXTURE9 tex,
+    int cellW,
+    int cellH,
+    int cols,
+    int frameCount)
+{
+    if (frameCount <= 0) return 0;
+    if (!tex) return frameCount - 1;
+
+    for (int frame = frameCount - 1; frame >= 0; --frame) {
+        if (TextureFrameHasVisiblePixels(tex, frame, cellW, cellH, cols)) {
+            return frame;
+        }
+    }
+    return frameCount - 1;
+}
+
+inline float GetGroundedRecoverDrawFeetY(const float* groundFeetY, int count, int frameIndex) {
+    return SampleFeetYTable(groundFeetY, count, frameIndex);
+}
+
 // Shared jump / air-control (negative Y = up on screen).
 inline constexpr float FIGHTER_JUMP_VELOCITY = -14.0f;
 inline constexpr float FIGHTER_AIR_CONTROL_MULTIPLIER = 1.5f;
@@ -119,8 +282,12 @@ inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_GROWTH = 11.0f;
 inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_SCALE = 42.0f;
 inline constexpr int NARUKAMI_HIT_STUN_FRAMES = 20;
 // Game loop / frame-timer clamps (named — do not hardcode Sleep/step caps in main).
-inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 8;
-inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 4;
+inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 0;
+// One logic tick per rendered battle frame (60 Hz @ vsync).
+inline constexpr int BATTLE_LOGIC_STEPS_PER_FRAME = 1;
+inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 3;
+// Slightly below 1.0 — tiny global gameplay slowdown (~4%) while keeping 1 step/frame smoothness.
+inline constexpr float BATTLE_GAMEPLAY_SPEED = 0.96f;
 
 // Simple P2 CPU AI (distances in screen pixels; cooldowns in update steps).
 inline constexpr float AI_ATTACK_RANGE = 82.0f;
@@ -278,8 +445,6 @@ inline constexpr float NARUKAMI_ZIODYNE_HORIZONTAL_OFFSET = 50.0f;
 inline constexpr float NARUKAMI_ZIODYNE_VERTICAL_OFFSET = 52.0f;
 inline constexpr float ULTIMATE_PULL_LERP = 0.42f;
 inline constexpr float ULTIMATE_PULL_SCREEN_MARGIN = 48.0f;
-// Brief upward pop on skill knockdown so gravity visibly drops them.
-inline constexpr float FIGHTER_DAMAGE_POP_VELOCITY = -6.5f;
 inline constexpr int THANATOS_SLASH_ANIM_DELAY = 4;
 inline constexpr int PERSONA_STANCE_ANIM_TICKS = 6;
 inline constexpr int MAKOTO_INTRO_TICKS = 10;

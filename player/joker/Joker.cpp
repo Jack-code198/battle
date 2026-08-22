@@ -434,8 +434,9 @@ void Joker::BeginHitReaction(float knockbackX) {
     isReturningToPosition = false;
 
     TryApplyHorizontalDelta(knockbackX);
-    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
-        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    ApplyStandardHitReactionVertical(position, verticalVelocity, IsOnGround());
+    if (IsOnGround()) {
+        currentFrame = maxFrame - 1;
     }
     ClampPosition();
     UpdateHurtbox();
@@ -635,25 +636,25 @@ void Joker::UpdateSandbag(int steps) {
         }
 
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
         stunTimer += steps;
         maxFrame = g_JokerAnims[JOKER_ANIM_DAMAGE].joker.maxFrame;
         if (maxFrame < 1) maxFrame = 1;
 
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
-            damageGroundHold = 0;
-        }
-        else if (!IsOnGround()) {
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginRecover();
             }
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
 
         UpdateHurtbox();
@@ -672,6 +673,7 @@ void Joker::UpdateSandbag(int steps) {
             return;
         }
 
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_RECOVER_ANIM_TICKS, maxFrame)) {
             FinishRecoverToStance();
         }
@@ -805,22 +807,24 @@ void Joker::UpdateHuman(int steps) {
             BeginHitReaction(0.0f);
         }
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
         maxFrame = GetMaxFrameForState(JOKER_DAMAGE);
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
-            damageGroundHold = 0;
-        }
-        else if (!IsOnGround()) {
+        if (maxFrame < 1) maxFrame = 1;
+
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginRecover();
             }
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateHurtbox();
         return;
@@ -832,6 +836,7 @@ void Joker::UpdateHuman(int steps) {
             FinishRecoverToStance();
             return;
         }
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_RECOVER_ANIM_TICKS, maxFrame)) {
             FinishRecoverToStance();
         }
@@ -1193,11 +1198,11 @@ void Joker::UpdateHuman(int steps) {
     else if (isAttackPressed) {
         nextState = JOKER_ATTACK;
     }
-    else if (isGuardPressed) {
-        nextState = IsOnGround() ? JOKER_GUARD : JOKER_GUARD_AIR;
-    }
     else if (isMoving) {
         nextState = isRunning ? JOKER_RUN : JOKER_WALK;
+    }
+    else if (isGuardPressed) {
+        nextState = IsOnGround() ? JOKER_GUARD : JOKER_GUARD_AIR;
     }
     else if (idleWaitFrames >= IDLE_THRESHOLD_FRAMES) {
         nextState = JOKER_IDLE;
@@ -1250,38 +1255,51 @@ void Joker::UpdateHuman(int steps) {
 }
 
 void Joker::Update() {
-    if (isDead && !IsPlayingResultPose()) return;
-
-    int steps = 0;
-    if (OwnsFrameTimer()) {
-        steps = g_GameTimer.FramesToUpdate();
-    }
-    else {
-        steps = g_GameTimer.GetLastFramesToUpdate();
-    }
-    if (steps <= 0) return;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
-
     if (IsPlayingResultPose()) {
-        const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
 
+        int steps = g_GameTimer.GetLastFramesToUpdate();
+        if (steps <= 0) steps = 1;
+        if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
+
         if (currentState == JOKER_WIN) {
-            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+            if (!resultPoseAnimLocked) {
+                if (currentFrame < maxFrame - 1) {
+                    if (AdvanceOneShotFrame(
+                        animAccumulator,
+                        currentFrame,
+                        steps,
+                        BATTLE_WIN_ANIM_TICKS,
+                        maxFrame)) {
+                        resultPoseAnimLocked = true;
+                    }
+                }
+                else {
+                    resultPoseAnimLocked = true;
+                }
+            }
+
+            if (resultPoseAnimLocked) {
+                if (resultPoseHoldFrame < 0) {
+                    const JokerTexture& winTex = g_JokerAnims[JOKER_ANIM_WIN].joker;
+                    if (winTex.texture) {
+                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                            winTex.texture,
+                            kJokerCellSize,
+                            kJokerCellSize,
+                            winTex.cols,
+                            maxFrame);
+                    }
+                    else {
+                        resultPoseHoldFrame = maxFrame - 1;
+                    }
+                }
+                currentFrame = resultPoseHoldFrame;
+            }
         }
         else if (currentState == JOKER_LOSE) {
-            if (currentFrame < maxFrame - 1) {
-                AdvanceOneShotFrame(
-                    animAccumulator,
-                    currentFrame,
-                    animSteps,
-                    BATTLE_LOSE_ANIM_TICKS,
-                    maxFrame);
-            }
-            else {
-                currentFrame = maxFrame - 1;
-            }
+            currentFrame = maxFrame - 1;
         }
 
         position.y = CHARACTER_GROUND_Y;
@@ -1289,6 +1307,12 @@ void Joker::Update() {
         UpdateHurtbox();
         return;
     }
+
+    if (isDead) return;
+
+    int steps = g_GameTimer.GetLastFramesToUpdate();
+    if (steps <= 0) return;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
@@ -1330,7 +1354,7 @@ void Joker::TakeDamage(int damage) {
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) isDead = true;
+        if (!TRAINING_MODE && health <= 0) isDead = true;
         return;
     }
 
@@ -1340,7 +1364,7 @@ void Joker::TakeDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1366,7 +1390,7 @@ void Joker::ApplySkillDamage(int damage) {
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) isDead = true;
+        if (!TRAINING_MODE && health <= 0) isDead = true;
         return;
     }
 
@@ -1376,7 +1400,7 @@ void Joker::ApplySkillDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1400,6 +1424,8 @@ void Joker::BeginVictoryPose() {
     isHit = false;
     isStunned = false;
     isDamageAnimating = false;
+    resultPoseAnimLocked = false;
+    resultPoseHoldFrame = -1;
     EnterActionState(JOKER_WIN);
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
@@ -1410,7 +1436,10 @@ void Joker::BeginDefeatPose() {
     isHit = false;
     isStunned = false;
     isDamageAnimating = false;
+    resultPoseHoldFrame = -1;
     EnterActionState(JOKER_LOSE);
+    if (maxFrame < 1) maxFrame = 1;
+    currentFrame = maxFrame - 1;
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateHurtbox();
@@ -1440,6 +1469,7 @@ void Joker::Reset() {
     sp = 0;
     RefillStamina();
     isDead = false;
+    resultPoseAnimLocked = false;
     isActive = true;
     trainingIdleFrames = 0;
     idleWaitFrames = 0;
@@ -1513,26 +1543,19 @@ void Joker::DrawArseneSprite(LPD3DXSPRITE sprite, JokerTexture& tex, int frame, 
 
 // Damage sheet feet Y measured from each cell (knockdown art sits much higher in the cell).
 static float GetJokerDamageFeetY(int frameIndex) {
-    static const float kDamageFeetY[] = { 52.0f, 46.0f, 44.0f, 34.0f, 36.0f, 22.0f };
-    const int count = (int)(sizeof(kDamageFeetY) / sizeof(kDamageFeetY[0]));
-    if (frameIndex < 0) frameIndex = 0;
-    if (frameIndex >= count) frameIndex = count - 1;
-    return kDamageFeetY[frameIndex];
+    return SampleFeetYTable(JOKER_DAMAGE_FEET_Y, (int)(sizeof(JOKER_DAMAGE_FEET_Y) / sizeof(JOKER_DAMAGE_FEET_Y[0])), frameIndex);
 }
 
 void Joker::DrawBodySprite(LPD3DXSPRITE sprite, JokerTexture& tex, int frame, const D3DXVECTOR3& pos, D3DCOLOR color) const {
     float bodyHeight = JOKER_BODY_HEIGHT;
     float feetY = JOKER_FEET_Y;
-    if (currentState == JOKER_DAMAGE) {
-        feetY = GetJokerDamageFeetY(frame);
-    }
-    else if (currentState == JOKER_RECOVER) {
-        // Recover starts from a low/downed pose.
-        const int count = (int)(sizeof(JOKER_RECOVER_FEET_Y) / sizeof(JOKER_RECOVER_FEET_Y[0]));
-        int idx = frame;
-        if (idx < 0) idx = 0;
-        if (idx >= count) idx = count - 1;
-        feetY = JOKER_RECOVER_FEET_Y[idx];
+    if (currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
+        feetY = MeasureTextureFrameBottomY(
+            tex.texture,
+            frame,
+            kJokerCellSize,
+            kJokerCellSize,
+            tex.cols);
     }
     else if (currentState == JOKER_ALL_OUT_MEMBER) {
         // Same scale as normal Joker; high feet so lower portraits aren't clipped underground.
@@ -1563,6 +1586,8 @@ void Joker::DrawSkillEffectOnOpponent(LPD3DXSPRITE sprite, JokerTexture& tex, in
 }
 
 void Joker::Render(LPD3DXSPRITE sprite) {
+    if (isDead && !IsPlayingResultPose() && !IsBattleEndSequence()) return;
+
     UpdateHurtbox();
 
     JokerAnimId animId = GetAnimForState(currentState);

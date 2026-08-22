@@ -142,14 +142,14 @@ static float GetMakotoIdleFeetY(int frameIndex) {
 }
 
 static float GetMakotoDamageFeetY(int frameIndex) {
-    static const float kFeetY[] = { 51.0f, 50.0f, 45.0f };
-    const int count = (int)(sizeof(kFeetY) / sizeof(kFeetY[0]));
-    if (frameIndex < 0) frameIndex = 0;
-    if (frameIndex >= count) frameIndex = count - 1;
-    return kFeetY[frameIndex];
+    return SampleFeetYTable(MAKOTO_DAMAGE_FEET_Y, (int)(sizeof(MAKOTO_DAMAGE_FEET_Y) / sizeof(MAKOTO_DAMAGE_FEET_Y[0])), frameIndex);
 }
 
-static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight, float& feetY) {
+static float GetMakotoRecoverFeetY(int frameIndex) {
+    return SampleFeetYTable(MAKOTO_RECOVER_FEET_Y_TABLE, (int)(sizeof(MAKOTO_RECOVER_FEET_Y_TABLE) / sizeof(MAKOTO_RECOVER_FEET_Y_TABLE[0])), frameIndex);
+}
+
+static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight, float& feetY, bool groundedKnockdown = false) {
     bodyHeight = MAKOTO_BODY_HEIGHT;
     feetY = MAKOTO_FEET_Y;
     if (state == IDLE) {
@@ -159,11 +159,14 @@ static void GetMakotoBodyDrawAnchor(int state, int frameIndex, float& bodyHeight
         feetY = MAKOTO_CROUCH_FEET_Y;
     }
     else if (state == DAMAGE || state == MAKOTO_LOSE) {
-        feetY = GetMakotoDamageFeetY(frameIndex);
+        feetY = groundedKnockdown
+            ? GetGroundedDamageDrawFeetY(MAKOTO_DAMAGE_FEET_Y, (int)(sizeof(MAKOTO_DAMAGE_FEET_Y) / sizeof(MAKOTO_DAMAGE_FEET_Y[0])), frameIndex, MAKOTO_KNOCKDOWN_GROUND_FEET_Y)
+            : GetMakotoDamageFeetY(frameIndex);
     }
     else if (state == RECOVER) {
-        // Recover art sits high in the cell — plant soles on the ground.
-        feetY = MAKOTO_RECOVER_FEET_Y;
+        feetY = groundedKnockdown
+            ? GetGroundedRecoverDrawFeetY(MAKOTO_RECOVER_FEET_Y_TABLE, (int)(sizeof(MAKOTO_RECOVER_FEET_Y_TABLE) / sizeof(MAKOTO_RECOVER_FEET_Y_TABLE[0])), frameIndex)
+            : GetMakotoRecoverFeetY(frameIndex);
     }
 }
 
@@ -658,38 +661,51 @@ void Makoto::UpdateLiveEffectPositions(Fighter& enemy) {
 }
 
 void Makoto::Update() {
-    if (isDead && !IsPlayingResultPose()) return;
-
-    int steps = 0;
-    if (OwnsFrameTimer()) {
-        steps = g_GameTimer.FramesToUpdate();
-    }
-    else {
-        steps = g_GameTimer.GetLastFramesToUpdate();
-    }
-    if (steps <= 0) return;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
-
     if (IsPlayingResultPose()) {
-        const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
 
-        if (currentState == MAKOTO_WIN) {
-            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
+        int steps = g_GameTimer.GetLastFramesToUpdate();
+        if (steps <= 0) steps = 1;
+        if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
+
+        if (currentState == MAKOTO_WIN || currentState == THANATOS_WIN) {
+            if (!resultPoseAnimLocked) {
+                if (currentFrame < maxFrame - 1) {
+                    if (AdvanceOneShotFrame(
+                        animAccumulator,
+                        currentFrame,
+                        steps,
+                        BATTLE_WIN_ANIM_TICKS,
+                        maxFrame)) {
+                        resultPoseAnimLocked = true;
+                    }
+                }
+                else {
+                    resultPoseAnimLocked = true;
+                }
+            }
+
+            if (resultPoseAnimLocked) {
+                if (resultPoseHoldFrame < 0) {
+                    const MakotoTexture* winTex = GetTextureForState(currentState);
+                    if (winTex && winTex->texture) {
+                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                            winTex->texture,
+                            MAKOTO_CELL_SIZE,
+                            MAKOTO_CELL_SIZE,
+                            winTex->cols,
+                            maxFrame);
+                    }
+                    else {
+                        resultPoseHoldFrame = maxFrame - 1;
+                    }
+                }
+                currentFrame = resultPoseHoldFrame;
+            }
         }
         else if (currentState == MAKOTO_LOSE) {
-            if (currentFrame < maxFrame - 1) {
-                AdvanceOneShotFrame(
-                    animAccumulator,
-                    currentFrame,
-                    animSteps,
-                    BATTLE_LOSE_ANIM_TICKS,
-                    maxFrame);
-            }
-            else {
-                currentFrame = maxFrame - 1;
-            }
+            currentFrame = maxFrame - 1;
         }
 
         position.y = CHARACTER_GROUND_Y;
@@ -697,6 +713,12 @@ void Makoto::Update() {
         UpdateScaledHurtbox();
         return;
     }
+
+    if (isDead) return;
+
+    int steps = g_GameTimer.GetLastFramesToUpdate();
+    if (steps <= 0) return;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
@@ -1254,9 +1276,9 @@ void Makoto::Update() {
     else if (isAtkUpPressed && TryConsumeStamina(STAMINA_COST_ACTION)) { nextState = ATTACK_UP; }
     else if (isCrouchPressed && isAttackPressed) { nextState = CROUCH_ATTACK; }
     else if (isAttackPressed) { nextState = ATTACK; }
+    else if (isMoving) { nextState = isRunning ? RUN : WALK; }
     else if (isGuardPressed) { nextState = IsOnGround() ? GUARD : GUARD_AIR; }
     else if (isCrouchPressed && !isMoving) { nextState = CROUCH; }
-    else if (isMoving) { nextState = isRunning ? RUN : WALK; }
     else {
         if (noInputFrames >= IDLE_THRESHOLD_FRAMES) { nextState = IDLE; currentFrame = 0; noInputFrames = 0; }
         else { nextState = STANCE; }
@@ -1519,7 +1541,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
 }
 
 void Makoto::Render(LPD3DXSPRITE sprite) {
-    if (isDead && !IsPlayingResultPose()) return;
+    if (isDead && !IsPlayingResultPose() && !IsBattleEndSequence()) return;
 
     if (Fighter* opponent = GetOpponent(*this)) {
         UpdateLiveEffectPositions(*opponent);
@@ -1571,7 +1593,18 @@ void Makoto::Render(LPD3DXSPRITE sprite) {
         int renderState = (actionVisualHold > 0) ? actionHoldState : currentState;
         float bodyHeight = MAKOTO_BODY_HEIGHT;
         float feetY = MAKOTO_FEET_Y;
-        GetMakotoBodyDrawAnchor(renderState, bodyFrame, bodyHeight, feetY);
+        const bool groundedKnockdown =
+            IsFighterAtGroundLevel(position) &&
+            (renderState == DAMAGE || renderState == RECOVER || renderState == MAKOTO_LOSE);
+        GetMakotoBodyDrawAnchor(renderState, bodyFrame, bodyHeight, feetY, groundedKnockdown);
+        if (renderState == DAMAGE || renderState == RECOVER || renderState == MAKOTO_LOSE) {
+            feetY = MeasureTextureFrameBottomY(
+                bodyTex->texture,
+                bodyFrame,
+                MAKOTO_CELL_SIZE,
+                MAKOTO_CELL_SIZE,
+                bodyTex->cols);
+        }
         SetMakotoFrameRect(makotoRect, *bodyTex, bodyFrame);
         DrawScaledCharacterSprite(sprite, bodyTex->texture, &makotoRect, position, facingDirection, 1.0f, color, bodyHeight, feetY);
     }
@@ -1624,12 +1657,12 @@ void Makoto::BeginSandbagHitReaction() {
     animAccumulator = 0;
     damageGroundHold = 0;
     idleWaitFrames = 0;
-    // Pop upward so gravity can drop them to the ground (air / ultimate hits).
-    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
-        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
-    }
+    ApplyStandardHitReactionVertical(position, verticalVelocity, IsOnGround());
     maxFrame = GetMaxFrameForState(DAMAGE);
     if (maxFrame < 1) maxFrame = 1;
+    if (IsOnGround()) {
+        currentFrame = maxFrame - 1;
+    }
     UpdateScaledHurtbox();
 }
 
@@ -1701,26 +1734,25 @@ void Makoto::UpdateSandbag(int steps) {
         }
 
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
 
         maxFrame = GetMaxFrameForState(DAMAGE);
         if (maxFrame < 1) maxFrame = 1;
 
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
-            damageGroundHold = 0;
-        }
-        else if (!IsOnGround()) {
-            // Hold last knockdown frame in the air until gravity lands them.
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= JOKER_DAMAGE_GROUND_HOLD_TICKS) {
                 BeginSandbagRecover();
             }
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_DAMAGE_ANIM_TICKS, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateScaledHurtbox();
         return;
@@ -1732,6 +1764,7 @@ void Makoto::UpdateSandbag(int steps) {
             FinishSandbagRecover();
             return;
         }
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, JOKER_RECOVER_ANIM_TICKS, maxFrame)) {
             FinishSandbagRecover();
         }
@@ -1800,7 +1833,7 @@ void Makoto::TakeDamage(int damage) {
         BeginSandbagHitReaction();
     }
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1831,6 +1864,7 @@ void Makoto::Reset() {
     sp = 0;
     RefillStamina();
     isDead = false;
+    resultPoseAnimLocked = false;
     isHit = false;
     hitStunTimer = 0;
     currentState = INTRO;
@@ -1898,6 +1932,8 @@ void Makoto::ClearResultPoseVisuals() {
 void Makoto::BeginVictoryPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseAnimLocked = false;
+    resultPoseHoldFrame = -1;
     ClearResultPoseVisuals();
     currentState = MAKOTO_WIN;
     currentFrame = 0;
@@ -1912,12 +1948,14 @@ void Makoto::BeginVictoryPose() {
 void Makoto::BeginDefeatPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseHoldFrame = -1;
     ClearResultPoseVisuals();
     currentState = MAKOTO_LOSE;
     currentFrame = 0;
     animAccumulator = 0;
     maxFrame = GetMaxFrameForState(MAKOTO_LOSE);
     if (maxFrame < 1) maxFrame = 1;
+    currentFrame = maxFrame - 1;
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateScaledHurtbox();
