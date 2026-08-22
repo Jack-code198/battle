@@ -9,6 +9,7 @@
 
 bool InitD3D();
 void Render();
+void WarmupRenderPipeline();
 void CleanUpD3D();
 void ToggleFullscreen();
 bool IsFullscreen();

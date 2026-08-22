@@ -277,24 +277,34 @@ void BuildAttackBox(
     attackY = fighterPos.y + vertical;
 }
 
-float GetYosukeBodyFeetY(int state, int frameIndex) {
+float GetYosukeBodyFeetY(int state, int frameIndex, bool groundedKnockdown = false) {
     if (state == YOSUKE_WALK || state == YOSUKE_RUN) {
-        // Single anchor keeps the cycle from bobbing while the stride plays out.
         return YOSUKE_RUN_FEET_Y;
     }
     if (state == YOSUKE_DAMAGE || state == YOSUKE_LOSE) {
-        static const float kDamageFeetY[] = { 54.0f, 48.0f, 50.0f, 50.0f, 43.0f, 50.0f, 25.0f };
-        const int count = (int)(sizeof(kDamageFeetY) / sizeof(kDamageFeetY[0]));
-        if (frameIndex < 0) frameIndex = 0;
-        if (frameIndex >= count) frameIndex = count - 1;
-        return kDamageFeetY[frameIndex];
+        if (groundedKnockdown) {
+            return GetGroundedDamageDrawFeetY(
+                YOSUKE_DAMAGE_FEET_Y,
+                (int)(sizeof(YOSUKE_DAMAGE_FEET_Y) / sizeof(YOSUKE_DAMAGE_FEET_Y[0])),
+                frameIndex,
+                YOSUKE_KNOCKDOWN_GROUND_FEET_Y);
+        }
+        return SampleFeetYTable(
+            YOSUKE_DAMAGE_FEET_Y,
+            (int)(sizeof(YOSUKE_DAMAGE_FEET_Y) / sizeof(YOSUKE_DAMAGE_FEET_Y[0])),
+            frameIndex);
     }
     if (state == YOSUKE_RECOVER) {
-        static const float kRecoverFeetY[] = { 25.0f, 28.0f, 44.0f, 47.0f, 54.0f };
-        const int count = (int)(sizeof(kRecoverFeetY) / sizeof(kRecoverFeetY[0]));
-        if (frameIndex < 0) frameIndex = 0;
-        if (frameIndex >= count) frameIndex = count - 1;
-        return kRecoverFeetY[frameIndex];
+        if (groundedKnockdown) {
+            return GetGroundedRecoverDrawFeetY(
+                YOSUKE_RECOVER_FEET_Y_TABLE,
+                (int)(sizeof(YOSUKE_RECOVER_FEET_Y_TABLE) / sizeof(YOSUKE_RECOVER_FEET_Y_TABLE[0])),
+                frameIndex);
+        }
+        return SampleFeetYTable(
+            YOSUKE_RECOVER_FEET_Y_TABLE,
+            (int)(sizeof(YOSUKE_RECOVER_FEET_Y_TABLE) / sizeof(YOSUKE_RECOVER_FEET_Y_TABLE[0])),
+            frameIndex);
     }
     return YOSUKE_STANCE_FEET_Y;
 }
@@ -615,8 +625,9 @@ void Yosuke::BeginHitReaction() {
     showEffect = false;
     skillHit = false;
     idleWaitFrames = 0;
-    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
-        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    ApplyStandardHitReactionVertical(position, verticalVelocity, IsOnGround());
+    if (IsOnGround()) {
+        currentFrame = maxFrame - 1;
     }
 }
 
@@ -775,28 +786,24 @@ void Yosuke::UpdateSandbag(int steps) {
     if (currentState == YOSUKE_DAMAGE) {
 
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
         maxFrame = GetMaxFrameForState(YOSUKE_DAMAGE);
         if (maxFrame < 1) maxFrame = 1;
 
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
-            damageGroundHold = 0;
-            if (IsOnGround() && verticalVelocity >= 0.0f) {
-                position.y = CHARACTER_GROUND_Y;
-            }
-        }
-        else if (!IsOnGround()) {
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            currentFrame = maxFrame - 1;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= kDamageGroundHoldTicks) {
                 BeginRecover();
             }
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateScaledHurtbox();
         return;
@@ -808,8 +815,7 @@ void Yosuke::UpdateSandbag(int steps) {
             FinishRecover();
             return;
         }
-        position.y = CHARACTER_GROUND_Y;
-        verticalVelocity = 0.0f;
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kRecoverAnimTicks, maxFrame)) {
             FinishRecover();
         }
@@ -1183,27 +1189,25 @@ void Yosuke::UpdateHuman(int steps) {
 
     if (currentState == YOSUKE_DAMAGE) {
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
         maxFrame = GetMaxFrameForState(YOSUKE_DAMAGE);
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
-            damageGroundHold = 0;
-            if (IsOnGround() && verticalVelocity >= 0.0f) {
-                position.y = CHARACTER_GROUND_Y;
-            }
-        }
-        else if (!IsOnGround()) {
+        if (maxFrame < 1) maxFrame = 1;
+
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            currentFrame = maxFrame - 1;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= kDamageGroundHoldTicks || hitStunTimer <= 0) {
                 BeginRecover();
             }
-            hitStunTimer -= steps;
+            hitStunTimer -= animSteps;
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateScaledHurtbox();
         return;
@@ -1211,8 +1215,7 @@ void Yosuke::UpdateHuman(int steps) {
 
     if (currentState == YOSUKE_RECOVER) {
         maxFrame = GetMaxFrameForState(YOSUKE_RECOVER);
-        position.y = CHARACTER_GROUND_Y;
-        verticalVelocity = 0.0f;
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kRecoverAnimTicks, maxFrame)) {
             FinishRecover();
         }
@@ -1362,51 +1365,67 @@ void Yosuke::UpdateHuman(int steps) {
 }
 
 void Yosuke::Update() {
-    if (isDead && !IsPlayingResultPose()) return;
-
-    int steps = 0;
-    if (OwnsFrameTimer()) {
-        steps = g_GameTimer.FramesToUpdate();
-    }
-    else {
-        steps = g_GameTimer.GetLastFramesToUpdate();
-    }
-    if (steps <= 0) return;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
-
     if (IsPlayingResultPose()) {
-        const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
+
+        int steps = g_GameTimer.GetLastFramesToUpdate();
+        if (steps <= 0) steps = 1;
+        if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
         if (currentState == YOSUKE_LOSE) {
             const int knockdownFrames = g_Damage.maxFrame;
             if (knockdownFrames > 0) {
                 maxFrame = knockdownFrames;
             }
-            if (currentFrame < maxFrame - 1) {
-                AdvanceOneShotFrame(
-                    animAccumulator,
-                    currentFrame,
-                    animSteps,
-                    BATTLE_LOSE_ANIM_TICKS,
-                    maxFrame);
-            }
-            else {
-                currentFrame = maxFrame - 1;
-            }
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
+            currentFrame = maxFrame - 1;
         }
         else if (currentState == YOSUKE_WIN) {
-            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
+            if (!resultPoseAnimLocked) {
+                if (currentFrame < maxFrame - 1) {
+                    if (AdvanceOneShotFrame(
+                        animAccumulator,
+                        currentFrame,
+                        steps,
+                        BATTLE_WIN_ANIM_TICKS,
+                        maxFrame)) {
+                        resultPoseAnimLocked = true;
+                    }
+                }
+                else {
+                    resultPoseAnimLocked = true;
+                }
+            }
+
+            if (resultPoseAnimLocked) {
+                if (resultPoseHoldFrame < 0) {
+                    if (g_Win.texture) {
+                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                            g_Win.texture,
+                            kCellSize,
+                            kCellSize,
+                            g_Win.cols,
+                            maxFrame);
+                    }
+                    else {
+                        resultPoseHoldFrame = maxFrame - 1;
+                    }
+                }
+                currentFrame = resultPoseHoldFrame;
+            }
         }
 
+        position.y = CHARACTER_GROUND_Y;
+        verticalVelocity = 0.0f;
         UpdateScaledHurtbox();
         return;
     }
+
+    if (isDead) return;
+
+    int steps = g_GameTimer.GetLastFramesToUpdate();
+    if (steps <= 0) return;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
@@ -1432,7 +1451,7 @@ void Yosuke::Update() {
 }
 
 void Yosuke::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
-    if (!sprite || (isDead && !IsPlayingResultPose())) return;
+    if (!sprite || (isDead && !IsPlayingResultPose() && !IsBattleEndSequence())) return;
 
     Fighter* opponent = GetOpponent(*this);
     if (opponent) {
@@ -1454,10 +1473,23 @@ void Yosuke::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
 }
 
 void Yosuke::Render(LPD3DXSPRITE sprite) {
-    if (!sprite || (isDead && !IsPlayingResultPose())) return;
+    if (!sprite || (isDead && !IsPlayingResultPose() && !IsBattleEndSequence())) return;
 
     const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
-    const float bodyFeetY = GetYosukeBodyFeetY(currentState, currentFrame);
+    const bool groundedKnockdown =
+        IsFighterAtGroundLevel(position) &&
+        (currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER || currentState == YOSUKE_LOSE);
+    float bodyFeetY = GetYosukeBodyFeetY(currentState, currentFrame, groundedKnockdown);
+    const YosukeTexture* knockdownTex = GetTextureForState(currentState);
+    if (knockdownTex && knockdownTex->texture &&
+        (currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER || currentState == YOSUKE_LOSE)) {
+        bodyFeetY = MeasureTextureFrameBottomY(
+            knockdownTex->texture,
+            currentFrame,
+            kCellSize,
+            kCellSize,
+            knockdownTex->cols);
+    }
 
     const YosukeTexture* jiraiyaTex = GetJiraiyaTextureForState(currentState);
     if (showJiraiya && jiraiyaTex && jiraiyaTex->texture && jiraiyaTex->maxFrame > 0) {
@@ -1569,7 +1601,7 @@ void Yosuke::TakeDamage(int damage) {
         if (currentState != YOSUKE_DAMAGE && currentState != YOSUKE_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+        if (!TRAINING_MODE && health <= 0) {
             isDead = true;
         }
         return;
@@ -1586,7 +1618,7 @@ void Yosuke::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1616,7 +1648,7 @@ void Yosuke::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1624,6 +1656,8 @@ void Yosuke::ApplySkillDamage(int damage) {
 void Yosuke::BeginVictoryPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseAnimLocked = false;
+    resultPoseHoldFrame = -1;
     showJiraiya = false;
     showEffect = false;
     currentState = YOSUKE_WIN;
@@ -1639,6 +1673,7 @@ void Yosuke::BeginVictoryPose() {
 void Yosuke::BeginDefeatPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseHoldFrame = -1;
     showJiraiya = false;
     showEffect = false;
     currentState = YOSUKE_LOSE;
@@ -1648,6 +1683,7 @@ void Yosuke::BeginDefeatPose() {
 
     const int knockdownFrames = g_Damage.maxFrame;
     maxFrame = (knockdownFrames > 0) ? knockdownFrames : 1;
+    currentFrame = maxFrame - 1;
 
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
@@ -1687,6 +1723,7 @@ void Yosuke::Reset() {
     sp = 0;
     RefillStamina();
     isDead = false;
+    resultPoseAnimLocked = false;
     isHit = false;
     hitStunTimer = 0;
     currentState = YOSUKE_INTRO;

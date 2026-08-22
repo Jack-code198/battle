@@ -6,7 +6,10 @@ class FrameTimer
 public:
 	void Init(int fps);
 	int FramesToUpdate();
-	// Value returned by the most recent FramesToUpdate() call (for shared anim stepping).
+	void Reset();
+	// Battle loop sets this once per displayed frame (P1/P2 + flow read the same value).
+	void SetLogicSteps(int steps);
+	// Value returned by the most recent FramesToUpdate() / SetLogicSteps() call.
 	int GetLastFramesToUpdate() const { return lastFramesToUpdate; }
 
 private:

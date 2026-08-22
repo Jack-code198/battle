@@ -332,7 +332,7 @@ static D3DXVECTOR3 GetNarukamiMyriadRipplePos(const Fighter& enemy) {
         0.0f);
 }
 
-float GetNarukamiBodyFeetY(int state, int frameIndex) {
+float GetNarukamiBodyFeetY(int state, int frameIndex, bool groundedKnockdown = false) {
     if (state == NARUKAMI_WALK || state == NARUKAMI_RUN) {
         return NARUKAMI_RUN_FEET_Y;
     }
@@ -340,18 +340,29 @@ float GetNarukamiBodyFeetY(int state, int frameIndex) {
         return NARUKAMI_CROUCH_FEET_Y;
     }
     if (state == NARUKAMI_DAMAGE || state == NARUKAMI_LOSE) {
-        static const float kDamageFeetY[] = { 52.0f, 49.0f, 55.0f, 52.0f, 52.0f, 34.0f, 19.0f };
-        const int count = (int)(sizeof(kDamageFeetY) / sizeof(kDamageFeetY[0]));
-        if (frameIndex < 0) frameIndex = 0;
-        if (frameIndex >= count) frameIndex = count - 1;
-        return kDamageFeetY[frameIndex];
+        if (groundedKnockdown) {
+            return GetGroundedDamageDrawFeetY(
+                NARUKAMI_DAMAGE_FEET_Y,
+                (int)(sizeof(NARUKAMI_DAMAGE_FEET_Y) / sizeof(NARUKAMI_DAMAGE_FEET_Y[0])),
+                frameIndex,
+                NARUKAMI_KNOCKDOWN_GROUND_FEET_Y);
+        }
+        return SampleFeetYTable(
+            NARUKAMI_DAMAGE_FEET_Y,
+            (int)(sizeof(NARUKAMI_DAMAGE_FEET_Y) / sizeof(NARUKAMI_DAMAGE_FEET_Y[0])),
+            frameIndex);
     }
     if (state == NARUKAMI_RECOVER) {
-        static const float kRecoverFeetY[] = { 39.0f, 43.0f, 50.0f };
-        const int count = (int)(sizeof(kRecoverFeetY) / sizeof(kRecoverFeetY[0]));
-        if (frameIndex < 0) frameIndex = 0;
-        if (frameIndex >= count) frameIndex = count - 1;
-        return kRecoverFeetY[frameIndex];
+        if (groundedKnockdown) {
+            return GetGroundedRecoverDrawFeetY(
+                NARUKAMI_RECOVER_FEET_Y_TABLE,
+                (int)(sizeof(NARUKAMI_RECOVER_FEET_Y_TABLE) / sizeof(NARUKAMI_RECOVER_FEET_Y_TABLE[0])),
+                frameIndex);
+        }
+        return SampleFeetYTable(
+            NARUKAMI_RECOVER_FEET_Y_TABLE,
+            (int)(sizeof(NARUKAMI_RECOVER_FEET_Y_TABLE) / sizeof(NARUKAMI_RECOVER_FEET_Y_TABLE[0])),
+            frameIndex);
     }
     if (state == NARUKAMI_INTRO_DISCARD) {
         return NARUKAMI_STANCE_FEET_Y;
@@ -511,6 +522,7 @@ Narukami::Narukami()
     , damageGroundHold(0)
     , introDisplayHold(0)
     , introLastFrame(0)
+    , introDiscardSteps(0)
     , pendingAttackState(0)
     , spawnPosition(0.0f, 0.0f, 0.0f)
 {
@@ -624,6 +636,7 @@ void Narukami::BeginIntroDiscard() {
     currentFrame = 0;
     animAccumulator = 0;
     introDisplayHold = 0;
+    introDiscardSteps = 0;
     discardFlying = true;
     discardPos = position;
     maxFrame = GetMaxFrameForState(NARUKAMI_INTRO_DISCARD);
@@ -656,8 +669,9 @@ void Narukami::BeginHitReaction() {
     showEffect = false;
     skillHit = false;
     idleWaitFrames = 0;
-    if (verticalVelocity > FIGHTER_DAMAGE_POP_VELOCITY) {
-        verticalVelocity = FIGHTER_DAMAGE_POP_VELOCITY;
+    ApplyStandardHitReactionVertical(position, verticalVelocity, IsOnGround());
+    if (IsOnGround()) {
+        currentFrame = maxFrame - 1;
     }
 }
 
@@ -893,16 +907,20 @@ void Narukami::UpdateSandbag(int steps) {
     }
 
     if (currentState == NARUKAMI_INTRO_DISCARD) {
-        // Fly behind (opposite facing) and up until off-screen.
+        maxFrame = GetMaxFrameForState(NARUKAMI_INTRO_DISCARD);
+        if (maxFrame < 1) maxFrame = 1;
         const float behind = -(float)facingDirection;
         discardPos.x += behind * NARUKAMI_DISCARD_FLY_X * (float)animSteps;
         discardPos.y -= NARUKAMI_DISCARD_FLY_Y * (float)animSteps;
+        introDiscardSteps += animSteps;
         AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kIntroTicks, maxFrame);
         const bool offScreen =
             discardPos.x < -80.0f || discardPos.x > (float)SCREEN_WIDTH + 80.0f ||
-            discardPos.y < -80.0f;
+            discardPos.y < -80.0f ||
+            introDiscardSteps >= 90;
         if (offScreen) {
             discardFlying = false;
+            introDiscardSteps = 0;
             CompleteToStance();
         }
         UpdateScaledHurtbox();
@@ -915,25 +933,25 @@ void Narukami::UpdateSandbag(int steps) {
         }
 
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
 
         maxFrame = GetMaxFrameForState(NARUKAMI_DAMAGE);
         if (maxFrame < 1) maxFrame = 1;
 
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
-            damageGroundHold = 0;
-        }
-        else if (!IsOnGround()) {
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= kDamageGroundHoldTicks) {
                 BeginRecover();
             }
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateScaledHurtbox();
         return;
@@ -945,6 +963,7 @@ void Narukami::UpdateSandbag(int steps) {
             FinishRecover();
             return;
         }
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kRecoverAnimTicks, maxFrame)) {
             FinishRecover();
         }
@@ -996,6 +1015,7 @@ void Narukami::UpdateHuman(int steps) {
     const bool attackDownNow = IsGameMouseDown(VK_LBUTTON);
     const bool attackJustPressed = attackDownNow && !attackButtonHeld;
     attackButtonHeld = attackDownNow;
+    const bool isAttackPressed = IsHumanControlled() ? attackJustPressed : attackDownNow;
 
     if (IsSummonState(currentState)) {
         UpdateSummon(steps, *opponent);
@@ -1061,12 +1081,15 @@ void Narukami::UpdateHuman(int steps) {
         const float behind = -(float)facingDirection;
         discardPos.x += behind * NARUKAMI_DISCARD_FLY_X * (float)animSteps;
         discardPos.y -= NARUKAMI_DISCARD_FLY_Y * (float)animSteps;
+        introDiscardSteps += animSteps;
         AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kIntroTicks, maxFrame);
         const bool offScreen =
             discardPos.x < -80.0f || discardPos.x > (float)SCREEN_WIDTH + 80.0f ||
-            discardPos.y < -80.0f;
+            discardPos.y < -80.0f ||
+            introDiscardSteps >= 90;
         if (offScreen) {
             discardFlying = false;
+            introDiscardSteps = 0;
             CompleteToStance();
         }
         UpdateScaledHurtbox();
@@ -1284,23 +1307,25 @@ void Narukami::UpdateHuman(int steps) {
 
     if (currentState == NARUKAMI_DAMAGE) {
         ApplyGravity(steps);
+        PinFighterToGround(position, verticalVelocity);
         maxFrame = GetMaxFrameForState(NARUKAMI_DAMAGE);
-        if (currentFrame < maxFrame - 1) {
-            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
-            damageGroundHold = 0;
-        }
-        else if (!IsOnGround()) {
+        if (maxFrame < 1) maxFrame = 1;
+
+        if (IsFighterAtGroundLevel(position)) {
             currentFrame = maxFrame - 1;
-            damageGroundHold = 0;
-        }
-        else {
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
-            damageGroundHold += steps;
+            damageGroundHold += animSteps;
             if (damageGroundHold >= kDamageGroundHoldTicks || hitStunTimer <= 0) {
                 BeginRecover();
             }
-            hitStunTimer -= steps;
+            hitStunTimer -= animSteps;
+        }
+        else if (currentFrame < maxFrame - 1) {
+            AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kDamageAnimTicks, maxFrame);
+            damageGroundHold = 0;
+        }
+        else {
+            currentFrame = maxFrame - 1;
+            damageGroundHold = 0;
         }
         UpdateScaledHurtbox();
         return;
@@ -1308,6 +1333,7 @@ void Narukami::UpdateHuman(int steps) {
 
     if (currentState == NARUKAMI_RECOVER) {
         maxFrame = GetMaxFrameForState(NARUKAMI_RECOVER);
+        PinFighterToGround(position, verticalVelocity);
         if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kRecoverAnimTicks, maxFrame)) {
             FinishRecover();
         }
@@ -1317,7 +1343,6 @@ void Narukami::UpdateHuman(int steps) {
 
     const bool isJumpPressed = IsGameKeyDown(DIK_SPACE);
     const bool isDashHeld = IsGameKeyDown(DIK_J);
-    const bool isAttackPressed = attackJustPressed;
     const bool isGuardPressed = IsHoldingGuardInput(*this);
     const bool isCrouchPressed = IsGameKeyDown(DIK_C);
     const bool isBigGamblePressed = IsGameKeyDown(DIK_E);
@@ -1405,9 +1430,17 @@ void Narukami::UpdateHuman(int steps) {
         nextState = NARUKAMI_BIG_GAMBLE;
         showIzanagi = false;
     }
+    else if (!IsHumanControlled() && isBigGamblePressed) {
+        nextState = NARUKAMI_ATTACK;
+        showIzanagi = false;
+    }
     else if (isCrossSlashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // R → cross_slash + izanagi
         nextState = NARUKAMI_ATTACK_UP;
+    }
+    else if (!IsHumanControlled() && isCrossSlashPressed) {
+        nextState = NARUKAMI_ATTACK;
+        showIzanagi = false;
     }
     else if (isDashHeld && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // J → dash
@@ -1431,14 +1464,14 @@ void Narukami::UpdateHuman(int steps) {
         nextState = NARUKAMI_ATTACK;
         showIzanagi = false;
     }
+    else if (isMoving) {
+        nextState = isRunning ? NARUKAMI_RUN : NARUKAMI_WALK;
+    }
     else if (isGuardPressed) {
         nextState = IsOnGround() ? NARUKAMI_GUARD : NARUKAMI_GUARD_AIR;
     }
     else if (isCrouchPressed && !isMoving) {
         nextState = NARUKAMI_CROUCH;
-    }
-    else if (isMoving) {
-        nextState = isRunning ? NARUKAMI_RUN : NARUKAMI_WALK;
     }
     else if (noInputFrames >= IDLE_THRESHOLD_FRAMES) {
         nextState = NARUKAMI_IDLE;
@@ -1484,51 +1517,67 @@ void Narukami::UpdateHuman(int steps) {
 }
 
 void Narukami::Update() {
-    if (isDead && !IsPlayingResultPose()) return;
-
-    int steps = 0;
-    if (OwnsFrameTimer()) {
-        steps = g_GameTimer.FramesToUpdate();
-    }
-    else {
-        steps = g_GameTimer.GetLastFramesToUpdate();
-    }
-    if (steps <= 0) return;
-    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
-
     if (IsPlayingResultPose()) {
-        const int animSteps = 1;
         maxFrame = GetMaxFrameForState(currentState);
         if (maxFrame < 1) maxFrame = 1;
+
+        int steps = g_GameTimer.GetLastFramesToUpdate();
+        if (steps <= 0) steps = 1;
+        if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
         if (currentState == NARUKAMI_LOSE) {
             const int knockdownFrames = g_Damage.maxFrame;
             if (knockdownFrames > 0) {
                 maxFrame = knockdownFrames;
             }
-            if (currentFrame < maxFrame - 1) {
-                AdvanceOneShotFrame(
-                    animAccumulator,
-                    currentFrame,
-                    animSteps,
-                    BATTLE_LOSE_ANIM_TICKS,
-                    maxFrame);
-            }
-            else {
-                currentFrame = maxFrame - 1;
-            }
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
+            currentFrame = maxFrame - 1;
         }
         else if (currentState == NARUKAMI_WIN) {
-            AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, BATTLE_WIN_ANIM_TICKS, maxFrame);
-            position.y = CHARACTER_GROUND_Y;
-            verticalVelocity = 0.0f;
+            if (!resultPoseAnimLocked) {
+                if (currentFrame < maxFrame - 1) {
+                    if (AdvanceOneShotFrame(
+                        animAccumulator,
+                        currentFrame,
+                        steps,
+                        BATTLE_WIN_ANIM_TICKS,
+                        maxFrame)) {
+                        resultPoseAnimLocked = true;
+                    }
+                }
+                else {
+                    resultPoseAnimLocked = true;
+                }
+            }
+
+            if (resultPoseAnimLocked) {
+                if (resultPoseHoldFrame < 0) {
+                    if (g_Win.texture) {
+                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                            g_Win.texture,
+                            NARUKAMI_CELL_SIZE,
+                            NARUKAMI_CELL_SIZE,
+                            g_Win.cols,
+                            maxFrame);
+                    }
+                    else {
+                        resultPoseHoldFrame = maxFrame - 1;
+                    }
+                }
+                currentFrame = resultPoseHoldFrame;
+            }
         }
 
+        position.y = CHARACTER_GROUND_Y;
+        verticalVelocity = 0.0f;
         UpdateScaledHurtbox();
         return;
     }
+
+    if (isDead) return;
+
+    int steps = g_GameTimer.GetLastFramesToUpdate();
+    if (steps <= 0) return;
+    if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
     if (!IsHumanControlled() && IsTutorialBattleMode()) {
         UpdateSandbag(steps);
@@ -1554,7 +1603,7 @@ void Narukami::Update() {
 }
 
 void Narukami::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
-    if (!sprite || (isDead && !IsPlayingResultPose())) return;
+    if (!sprite || (isDead && !IsPlayingResultPose() && !IsBattleEndSequence())) return;
 
     const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
 
@@ -1573,10 +1622,23 @@ void Narukami::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
 }
 
 void Narukami::Render(LPD3DXSPRITE sprite) {
-    if (!sprite || (isDead && !IsPlayingResultPose())) return;
+    if (!sprite || (isDead && !IsPlayingResultPose() && !IsBattleEndSequence())) return;
 
     const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
-    const float bodyFeetY = GetNarukamiBodyFeetY(currentState, currentFrame);
+    const bool groundedKnockdown =
+        IsFighterAtGroundLevel(position) &&
+        (currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER || currentState == NARUKAMI_LOSE);
+    float bodyFeetY = GetNarukamiBodyFeetY(currentState, currentFrame, groundedKnockdown);
+    const NarukamiTexture* knockdownTex = GetTextureForState(currentState);
+    if (knockdownTex && knockdownTex->texture &&
+        (currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER || currentState == NARUKAMI_LOSE)) {
+        bodyFeetY = MeasureTextureFrameBottomY(
+            knockdownTex->texture,
+            currentFrame,
+            NARUKAMI_CELL_SIZE,
+            NARUKAMI_CELL_SIZE,
+            knockdownTex->cols);
+    }
     const bool frontSummon =
         showIzanagi &&
         (currentState == NARUKAMI_SUMMON_ZIO || currentState == NARUKAMI_SUMMON_ZIODYNE);
@@ -1766,7 +1828,7 @@ void Narukami::TakeDamage(int damage) {
         if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+        if (!TRAINING_MODE && health <= 0) {
             isDead = true;
         }
         return;
@@ -1782,7 +1844,7 @@ void Narukami::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1813,7 +1875,7 @@ void Narukami::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && !IsTutorialBattleMode() && health <= 0) {
+    if (!TRAINING_MODE && health <= 0) {
         isDead = true;
     }
 }
@@ -1821,6 +1883,8 @@ void Narukami::ApplySkillDamage(int damage) {
 void Narukami::BeginVictoryPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseAnimLocked = false;
+    resultPoseHoldFrame = -1;
     showIzanagi = false;
     showEffect = false;
     currentState = NARUKAMI_WIN;
@@ -1836,6 +1900,7 @@ void Narukami::BeginVictoryPose() {
 void Narukami::BeginDefeatPose() {
     isHit = false;
     hitStunTimer = 0;
+    resultPoseHoldFrame = -1;
     showIzanagi = false;
     showEffect = false;
     currentState = NARUKAMI_LOSE;
@@ -1845,8 +1910,8 @@ void Narukami::BeginDefeatPose() {
 
     const int knockdownFrames = g_Damage.maxFrame;
     maxFrame = (knockdownFrames > 0) ? knockdownFrames : 1;
+    currentFrame = maxFrame - 1;
 
-    // Stay at current X; play knockdown on the ground where the fighter fell.
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     jumpCount = 0;
@@ -1878,6 +1943,7 @@ void Narukami::Reset() {
     sp = 0;
     RefillStamina();
     isDead = false;
+    resultPoseAnimLocked = false;
     isHit = false;
     hitStunTimer = 0;
     currentState = NARUKAMI_INTRO;
@@ -1901,6 +1967,7 @@ void Narukami::Reset() {
     idleWaitFrames = 0;
     introDisplayHold = 0;
     introLastFrame = 0;
+    introDiscardSteps = 0;
     pendingAttackState = 0;
     discardFlying = false;
     damageGroundHold = 0;

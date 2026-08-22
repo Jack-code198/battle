@@ -53,6 +53,7 @@ static int playerSelectChoice = 0;
 static int stageChoice = 0;
 static bool g_BattleEscHeld = false;
 static bool g_GameOverRetryHeld = false;
+static bool g_BattleSetupPending = false;
 
 // --- Physics sample (gravity / velocity / acceleration / force) ---
 static PhysicsBody g_PhysicsDemo;
@@ -166,15 +167,21 @@ static void StartBattleFromSelect() {
     ApplySelectedStageToBattle();
     g_SoundManager.StopMenuMusic();
     g_SoundManager.PlayBattleMusic();
-    SetupBattleFighters(g_SelectedP1, g_SelectedP2);
-    if (g_Player1) g_Player1->Reset();
-    if (g_Player2) g_Player2->Reset();
-    if (g_Player1 && g_Player2) {
-        ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
-    }
+    g_BattleSetupPending = true;
     ResetBattleFlow();
     SetMenuCursorEnabled(false);
     g_StateStack.Push(AppScreen::Battle);
+}
+
+static void FinishPendingBattleSetup() {
+    if (!g_BattleSetupPending) return;
+
+    SetupBattleFighters(g_SelectedP1, g_SelectedP2);
+    if (g_Player1 && g_Player2) {
+        ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
+    }
+    g_GameTimer.Reset();
+    g_BattleSetupPending = false;
 }
 
 static void CheckBattleGameOver() {
@@ -248,6 +255,8 @@ int main(int argc, char* argv[]) {
         g_SoundManager.PlayMenuMusic();
     }
 
+    WarmupRenderPipeline();
+
     g_GameTimer.Init(GAME_ANIMATION_FPS);
     g_StateStack.ReturnToMainMenu();
 
@@ -307,19 +316,17 @@ int main(int argc, char* argv[]) {
         }
         case AppScreen::Battle: {
             SetMenuCursorEnabled(false);
+            FinishPendingBattleSetup();
+            BeginBattleLogicFrame();
             if (g_Player1) g_Player1->Update();
             if (g_Player2) g_Player2->Update();
-            {
-                int tutorialSteps = g_GameTimer.GetLastFramesToUpdate();
-                if (tutorialSteps <= 0) tutorialSteps = 1;
-                ApplyTutorialModePerks(tutorialSteps);
-            }
-            if (g_Player1 && g_Player2) {
+            ApplyTutorialModePerks(g_GameTimer.GetLastFramesToUpdate());
+            if (g_Player1 && g_Player2 && !IsBattleEndSequence()) {
                 EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
                 ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
-                EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
             }
             UpdateBattleFlow();
+            EnsureBattleResultPosesApplied();
             Render();
             CheckBattleGameOver();
 
@@ -365,7 +372,7 @@ int main(int argc, char* argv[]) {
         }
 
         DWORD frameElapsed = GetTickCount() - frameStart;
-        if (frameElapsed < GAME_LOOP_MIN_FRAME_MS) {
+        if (GAME_LOOP_MIN_FRAME_MS > 0 && frameElapsed < GAME_LOOP_MIN_FRAME_MS) {
             Sleep(GAME_LOOP_MIN_FRAME_MS - frameElapsed);
         }
     }

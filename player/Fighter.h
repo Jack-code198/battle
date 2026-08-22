@@ -40,6 +40,9 @@ public:
     int hitStunTimer;
     bool isDead;
     int velocity;
+    // True once win/lose one-shot anim reaches its last frame (hold until fade-out).
+    bool resultPoseAnimLocked;
+    int resultPoseHoldFrame; // last visible win frame; -1 = not resolved yet
 
     D3DCOLOR spriteTint;
 

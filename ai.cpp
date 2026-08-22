@@ -35,6 +35,19 @@ struct AiBrain {
 
     static void PickAttackMode(Fighter& cpu) {
         const int roll = rand() % 100;
+        // Narukami CPU: prefer basic LMB — E/R need stamina and can silently fail.
+        if (cpu.GetCharacterId() == Char_Narukami) {
+            if (roll < 10) {
+                cpu.aiAttackMode = 1;
+            }
+            else if (roll < 18) {
+                cpu.aiAttackMode = 2;
+            }
+            else {
+                cpu.aiAttackMode = 0;
+            }
+            return;
+        }
         if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT) {
             cpu.aiAttackMode = 1; // E — held key, reliable for CPU
         }
@@ -103,13 +116,6 @@ struct AiBrain {
             return;
         }
 
-        if (!IsHumanPlayerEngaged()) {
-            cpu.aiMovePulse = 0;
-            cpu.aiMoveIntent = 0;
-            MaintainSpacing(cpu, distanceX);
-            return;
-        }
-
         const bool inMeleeRange = distanceX <= AI_ATTACK_RANGE;
         const bool canApproach = distanceX > (AI_ATTACK_RANGE + AI_APPROACH_STOP_GAP);
 
@@ -155,7 +161,6 @@ struct AiBrain {
 };
 
 bool IsCpuLockedInReaction(const Fighter& cpuFighter, int currentState) {
-    if (cpuFighter.IsHit()) return true;
     if (cpuFighter.IsPlayingResultPose()) return true;
 
     switch (cpuFighter.GetCharacterId()) {

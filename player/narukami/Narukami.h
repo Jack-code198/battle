@@ -69,6 +69,7 @@ private:
     int damageGroundHold;
     int introDisplayHold;
     int introLastFrame;
+    int introDiscardSteps;
     int pendingAttackState; // attack state after persona summon finishes
     D3DXVECTOR3 spawnPosition;
 

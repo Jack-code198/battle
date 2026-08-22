@@ -111,8 +111,14 @@ bool InitD3D() {
     d3dpp.BackBufferHeight = SCREEN_HEIGHT;
     d3dpp.hDeviceWindow = g_hWnd;
     d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+    DWORD behaviorFlags = D3DCREATE_HARDWARE_VERTEXPROCESSING;
     HRESULT hr = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, g_hWnd,
-        D3DCREATE_SOFTWARE_VERTEXPROCESSING, &d3dpp, &g_pD3DDevice);
+        behaviorFlags, &d3dpp, &g_pD3DDevice);
+    if (FAILED(hr)) {
+        behaviorFlags = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+        hr = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, g_hWnd,
+            behaviorFlags, &d3dpp, &g_pD3DDevice);
+    }
     return SUCCEEDED(hr);
 }
 
@@ -158,6 +164,7 @@ void Render() {
 
             if (g_Player1 && g_Player2) {
                 ApplyBattleRenderTints();
+                EnsureBattleResultPosesApplied();
                 // Draw depth follows slot (P1 then P2), not current X — avoids "phasing behind" visuals.
                 Fighter* leftFighter = g_Player1;
                 Fighter* rightFighter = g_Player2;
@@ -195,6 +202,34 @@ void Render() {
                     g_Player2->GetMaxSp(),
                     g_Player2->GetStamina(),
                     g_Player2->GetMaxStamina());
+            }
+        }
+        g_pD3DDevice->EndScene();
+    }
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+void WarmupRenderPipeline() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        if (texBgCity1 && spriteBrush) {
+            D3DSURFACE_DESC desc;
+            texBgCity1->GetLevelDesc(0, &desc);
+            if (desc.Width > 0 && desc.Height > 0) {
+                const float scaleX = (float)SCREEN_WIDTH / (float)desc.Width;
+                const float scaleY = (float)SCREEN_HEIGHT / (float)desc.Height;
+                D3DXMATRIX matScale;
+                D3DXMatrixScaling(&matScale, scaleX, scaleY, 1.0f);
+                spriteBrush->Begin(D3DXSPRITE_ALPHABLEND);
+                spriteBrush->SetTransform(&matScale);
+                D3DXVECTOR3 bgPos(0.0f, 0.0f, 0.0f);
+                spriteBrush->Draw(texBgCity1, NULL, NULL, &bgPos, D3DCOLOR_XRGB(255, 255, 255));
+                D3DXMATRIX matIdentity;
+                D3DXMatrixIdentity(&matIdentity);
+                spriteBrush->SetTransform(&matIdentity);
+                spriteBrush->End();
             }
         }
         g_pD3DDevice->EndScene();
