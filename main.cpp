@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <cstring>
+#include <windows.h>
 #include "config.h"
 #include "input.h"
 #include "game_logic.h"
@@ -10,7 +11,9 @@
 #include "player/yosuke/Yosuke.h"
 #include "audio.h"
 #include "ui.h"
-#include "menuMain.h"
+#include "MainMenu.h"
+#include "optionsMenu.h"
+#include "pauseMenu.h"
 #include "stageSelect.h"
 #include "playerSelect.h"
 #include "collision.h"
@@ -20,6 +23,9 @@
 
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
+
+int g_TargetFPS = 60;
+int g_BrightnessLevel = BRIGHTNESS_DEFAULT;
 
 LPDIRECT3DTEXTURE9 texBgCity1 = NULL;
 
@@ -49,6 +55,9 @@ AttackData downAttackHitbox = {
 static GameStateStack g_StateStack;
 static FontRenderer g_FontRenderer;
 static int menuChoice = 0;
+static int optionsChoice = 0;
+static int pauseChoice = 0;
+static int moveListChoice = 0;
 static int playerSelectChoice = 0;
 static int stageChoice = 0;
 static bool g_BattleEscHeld = false;
@@ -61,7 +70,37 @@ static PhysicsBody g_PhysicsDemo;
 // --- Collision detection sample (AABB + OBB + overlap response + frame-miss sweep) ---
 static bool g_CollisionSystemsReady = false;
 
-static void InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
+static bool WantsDebugConsole(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--console") == 0 ||
+            strcmp(argv[i], "--collision-test") == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void TryAttachDebugConsole() {
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        AllocConsole();
+    }
+    FILE* stream = nullptr;
+    freopen_s(&stream, "CONOUT$", "w", stdout);
+    freopen_s(&stream, "CONOUT$", "w", stderr);
+    freopen_s(&stream, "CONIN$", "r", stdin);
+    SetConsoleTitleA("Persona Battle Debug Console");
+}
+
+static void PrintCollisionSelfTestReport(const CollisionSelfTestReport& report) {
+    printf("[Collision] AABB intersect ........ %s\n", report.aabbHit ? "PASS" : "FAIL");
+    printf("[Collision] Swept AABB ............ %s\n", report.sweptHit ? "PASS" : "FAIL");
+    printf("[Collision] OBB intersect ......... %s\n", report.obbHit ? "PASS" : "FAIL");
+    printf("[Collision] Overlap resolve ....... %s\n", report.overlapResolved ? "PASS" : "FAIL");
+    printf("[Collision] Overall ............... %s\n", report.AllPassed() ? "PASS" : "FAIL");
+    printf("[Battle debug] Press B to toggle hitboxes. Press H to heal (tutorial mode only).\n");
+}
+
+static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device, bool printToConsole) {
     // Font / FontRenderer
     BindGameFontRenderer(&g_FontRenderer);
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
@@ -72,28 +111,13 @@ static void InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     g_PhysicsDemo.position = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
     PhysicsWorld::IntegrateGravityOnGround(g_PhysicsDemo, CHARACTER_GROUND_Y, GRAVITY, 1.0f / 60.0f);
 
-    // Collision detection (AABB)
-    AABB boxA = { 0.0f, 0.0f, 40.0f, 60.0f };
-    AABB boxB = { 20.0f, 10.0f, 40.0f, 60.0f };
-    const bool aabbHit = CollisionHelper::AABBIntersect(boxA, boxB);
-
-    // Frame-miss: swept AABB through PhysicsWorld.
-    AABB fastMover = { 0.0f, 0.0f, 20.0f, 20.0f };
-    AABB thinWall = { 50.0f, 0.0f, 10.0f, 40.0f };
-    const bool sweptHit = PhysicsWorld::DetectSweptCollision(fastMover, thinWall, 80.0f, 0.0f);
-
-    // Non-axis-aligned OBB
-    OBB orientedA = { 100.0f, 100.0f, 30.0f, 20.0f, 0.4f };
-    OBB orientedB = { 120.0f, 105.0f, 25.0f, 15.0f, -0.3f };
-    const bool obbHit = PhysicsWorld::DetectOrientedCollision(orientedA, orientedB);
-
-    // Overlap resolution
-    float pushX = 0.0f, pushY = 0.0f;
-    AABB moving = boxA;
-    const bool resolved = PhysicsWorld::ResolveOverlap(moving, boxB, pushX, pushY);
-
-    g_CollisionSystemsReady = aabbHit && sweptHit && (obbHit || !obbHit) && resolved;
-    (void)g_CollisionSystemsReady;
+    // Collision detection (AABB / OBB / swept / overlap) — wired from int main.
+    const CollisionSelfTestReport collisionReport = RunCollisionModuleSelfTest();
+    g_CollisionSystemsReady = collisionReport.AllPassed();
+    if (printToConsole) {
+        PrintCollisionSelfTestReport(collisionReport);
+    }
+    return g_CollisionSystemsReady;
 }
 
 static void RenderMenuScreen() {
@@ -103,6 +127,51 @@ static void RenderMenuScreen() {
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
         mainMenu(menuChoice);
+        ApplyBrightnessOverlay();
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderOptionsScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        optionsMenuScreen(optionsChoice);
+        ApplyBrightnessOverlay();
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderPauseScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        RenderBattleSceneContents();
+        pauseMenuScreen(pauseChoice);
+        ApplyBrightnessOverlay();
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderMoveListScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        RenderBattleSceneContents();
+        moveListScreen(moveListChoice, g_SelectedP1);
+        ApplyBrightnessOverlay();
         g_pD3DDevice->EndScene();
     }
 
@@ -180,6 +249,9 @@ static void FinishPendingBattleSetup() {
     if (g_Player1 && g_Player2) {
         ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
     }
+    if (IsTutorialBattleMode()) {
+        ResetTutorialGuide();
+    }
     g_GameTimer.Reset();
     g_BattleSetupPending = false;
 }
@@ -199,6 +271,20 @@ static void CheckBattleGameOver() {
 
 // Entry point (BMCS2224): int main — game loop, font, collision, physics, state stack.
 int main(int argc, char* argv[]) {
+    const bool wantsConsole = WantsDebugConsole(argc, argv);
+    const bool collisionTestOnly = (argc >= 2 && strcmp(argv[1], "--collision-test") == 0);
+    if (wantsConsole) {
+        TryAttachDebugConsole();
+    }
+
+    if (collisionTestOnly) {
+        const CollisionSelfTestReport report = RunCollisionModuleSelfTest();
+        PrintCollisionSelfTestReport(report);
+        printf("\nPress Enter to close...\n");
+        getchar();
+        return report.AllPassed() ? 0 : 1;
+    }
+
     (void)argc;
     (void)argv;
 
@@ -210,7 +296,7 @@ int main(int argc, char* argv[]) {
     D3DXCreateSprite(g_pD3DDevice, &spriteBrush);
 
     // Wire requirement systems so markers are live from main.
-    InitRequirementSystems(g_pD3DDevice);
+    InitRequirementSystems(g_pD3DDevice, wantsConsole);
 
     if (!LoadMakotoTextures()) {
         return 0;
@@ -243,6 +329,14 @@ int main(int argc, char* argv[]) {
         MessageBox(g_hWnd, "Main menu assets failed to load - check assets/background/MainMenu.jpg and assets/font", "Warning", MB_OK);
     }
 
+    if (!LoadOptionsTextures()) {
+        MessageBox(g_hWnd, "Options menu font failed to load - check assets/font", "Warning", MB_OK);
+    }
+
+    if (!LoadPauseMenuTextures()) {
+        MessageBox(g_hWnd, "Pause menu font failed to load - check assets/font", "Warning", MB_OK);
+    }
+
     if (!LoadStageTextures()) {
         MessageBox(g_hWnd, "One or more stage textures failed to load - check stageSelect.cpp paths", "Warning", MB_OK);
     }
@@ -262,6 +356,7 @@ int main(int argc, char* argv[]) {
 
     // --- Game Loop ---
     while (WindowIsRunning()) {
+        ProcessGraphicsDeviceEvents();
         DWORD frameStart = GetTickCount();
         GetInput();
         g_SoundManager.Update();
@@ -280,7 +375,28 @@ int main(int argc, char* argv[]) {
                 playerSelectChoice = 0;
                 ResetPlayerSelectInputState();
             }
+            else if (menuChoice == 2) {
+                g_StateStack.Push(AppScreen::Options);
+                optionsChoice = 0;
+                ResetOptionsMenuInputState();
+            }
             menuChoice = 0;
+            break;
+        }
+        case AppScreen::Options: {
+            SetMenuCursorEnabled(true);
+            RenderOptionsScreen();
+
+            if (optionsChoice == 2) {
+                g_StateStack.Pop();
+                if (g_StateStack.Current() == AppScreen::Pause) {
+                    ResetPauseMenuInputState();
+                }
+                else {
+                    ResetMenuInputState();
+                }
+            }
+            optionsChoice = 0;
             break;
         }
         case AppScreen::PlayerSelect: {
@@ -321,6 +437,7 @@ int main(int argc, char* argv[]) {
             if (g_Player1) g_Player1->Update();
             if (g_Player2) g_Player2->Update();
             ApplyTutorialModePerks(g_GameTimer.GetLastFramesToUpdate());
+            UpdateTutorialGuide(g_GameTimer.GetLastFramesToUpdate());
             if (g_Player1 && g_Player2 && !IsBattleEndSequence()) {
                 EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
                 ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
@@ -331,15 +448,68 @@ int main(int argc, char* argv[]) {
             CheckBattleGameOver();
 
             const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
-            if (escPressed && !g_BattleEscHeld) {
+            if (escPressed && !g_BattleEscHeld && IsBattleInputAllowed()) {
+                g_SoundManager.PlaySelectionSound();
+                SetMenuCursorEnabled(true);
+                pauseChoice = 0;
+                ResetPauseMenuInputState();
+                g_StateStack.Push(AppScreen::Pause);
+            }
+            g_BattleEscHeld = escPressed;
+            break;
+        }
+        case AppScreen::Pause: {
+            SetMenuCursorEnabled(true);
+            RenderPauseScreen();
+
+            switch (pauseChoice) {
+            case 1:
+                g_StateStack.Pop();
+                SetMenuCursorEnabled(false);
+                if (g_Player1) g_Player1->SyncHeldInputState();
+                if (g_Player2) g_Player2->SyncHeldInputState();
+                break;
+            case 2:
+                g_StateStack.Push(AppScreen::MoveList);
+                moveListChoice = 0;
+                ResetMoveListInputState();
+                break;
+            case 3:
+                g_StateStack.Push(AppScreen::Options);
+                optionsChoice = 0;
+                ResetOptionsMenuInputState();
+                break;
+            case 4:
+                g_SoundManager.StopBattleMusic();
+                g_SoundManager.PlayMenuMusic();
+                SetMenuCursorEnabled(true);
+                DestroyFighters();
+                ResetBattleFlow();
+                ResetPlayerSelectInputState();
+                playerSelectChoice = 0;
+                g_StateStack.ReturnToPlayerSelect();
+                break;
+            case 5:
                 g_SoundManager.StopBattleMusic();
                 g_SoundManager.PlayMenuMusic();
                 SetMenuCursorEnabled(true);
                 ResetMenuInputState();
                 menuChoice = 0;
                 g_StateStack.ReturnToMainMenu();
+                break;
             }
-            g_BattleEscHeld = escPressed;
+            pauseChoice = 0;
+            break;
+        }
+        case AppScreen::MoveList: {
+            SetMenuCursorEnabled(true);
+            RenderMoveListScreen();
+
+            if (moveListChoice == 2) {
+                g_StateStack.Pop();
+                ResetPauseMenuInputState();
+            }
+            moveListChoice = 0;
             break;
         }
         case AppScreen::GameOver: {
@@ -351,6 +521,7 @@ int main(int argc, char* argv[]) {
             if (retryPressed && !g_GameOverRetryHeld) {
                 if (g_Player1) g_Player1->Reset();
                 if (g_Player2) g_Player2->Reset();
+                PositionTutorialFightersClose();
                 if (g_Player1 && g_Player2) {
                     ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
                 }
@@ -372,13 +543,16 @@ int main(int argc, char* argv[]) {
         }
 
         DWORD frameElapsed = GetTickCount() - frameStart;
-        if (GAME_LOOP_MIN_FRAME_MS > 0 && frameElapsed < GAME_LOOP_MIN_FRAME_MS) {
-            Sleep(GAME_LOOP_MIN_FRAME_MS - frameElapsed);
+        DWORD minFrameMs = GetTargetFrameIntervalMs();
+        if (minFrameMs > 0 && frameElapsed < minFrameMs) {
+            Sleep(minFrameMs - frameElapsed);
         }
     }
 
     CleanUpPlayerSelectTextures();
     CleanUpMenuTextures();
+    CleanUpOptionsTextures();
+    CleanUpPauseMenuTextures();
     CleanUpStageTextures();
     DestroyFighters();
     g_FontRenderer.Release();

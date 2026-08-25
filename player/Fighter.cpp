@@ -13,6 +13,7 @@ Fighter::Fighter()
     , aiMovePulse(0)
     , aiMoveIntent(0)
     , skillEndHold(0)
+    , runBlend(0.0f)
     , facingDirection(1)
     , health(MAKOTO_MAX_HEALTH)
     , maxHealth(MAKOTO_MAX_HEALTH)
@@ -67,6 +68,17 @@ void Fighter::UpdateScaledHurtbox() {
     hurtbox.height = DEFAULT_HURTBOX_HEIGHT * renderScale;
     hurtbox.x = position.x - hurtbox.width * 0.5f;
     hurtbox.y = position.y - hurtbox.height;
+}
+
+bool Fighter::CanReceiveHit() const {
+    if (isDead || IsPlayingResultPose()) {
+        return false;
+    }
+    // Tutorial sandbag stays hittable so training combos / skills always register.
+    if (IsTutorialBattleMode() && !humanControlled) {
+        return true;
+    }
+    return !IsInKnockdownReaction();
 }
 
 void Fighter::TryApplyHorizontalDelta(float deltaX) {
@@ -154,6 +166,7 @@ void Fighter::RegenStamina(int animSteps) {
 }
 
 void Fighter::ApplySlotSpawnDefaults() {
+    runBlend = 0.0f;
     if (playerSlot == 0) {
         float spawnX = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + MAKOTO_SPAWN_FORWARD;
         position = D3DXVECTOR3(spawnX, CHARACTER_GROUND_Y, 0);

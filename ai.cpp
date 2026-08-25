@@ -35,19 +35,6 @@ struct AiBrain {
 
     static void PickAttackMode(Fighter& cpu) {
         const int roll = rand() % 100;
-        // Narukami CPU: prefer basic LMB — E/R need stamina and can silently fail.
-        if (cpu.GetCharacterId() == Char_Narukami) {
-            if (roll < 10) {
-                cpu.aiAttackMode = 1;
-            }
-            else if (roll < 18) {
-                cpu.aiAttackMode = 2;
-            }
-            else {
-                cpu.aiAttackMode = 0;
-            }
-            return;
-        }
         if (roll < AI_SIDE_ATTACK_CHANCE_PERCENT) {
             cpu.aiAttackMode = 1; // E — held key, reliable for CPU
         }
@@ -112,14 +99,16 @@ struct AiBrain {
 
         if (cpu.aiAttackPulse > 0) {
             --cpu.aiAttackPulse;
+            if (enemy && !IsFighterInMeleeStrikeRange(cpu, *enemy)) {
+                SetToward(deltaX);
+            }
             FireAttackInput(cpu);
             return;
         }
 
-        const bool inMeleeRange = distanceX <= AI_ATTACK_RANGE;
-        const bool canApproach = distanceX > (AI_ATTACK_RANGE + AI_APPROACH_STOP_GAP);
+        const bool inStrikeRange = IsFighterInMeleeStrikeRange(cpu, *enemy);
 
-        if (inMeleeRange) {
+        if (inStrikeRange) {
             TryAttack(cpu);
             if (cpu.aiAttackPulse <= 0) {
                 MaintainSpacing(cpu, distanceX);
@@ -127,35 +116,25 @@ struct AiBrain {
             return;
         }
 
-        if (canApproach) {
-            if (cpu.aiMovePulse <= 0) {
-                cpu.aiMoveIntent = (distanceX > AI_RUN_RANGE) ? 2 : 1;
-                cpu.aiMovePulse = AI_APPROACH_BURST_STEPS + (rand() % 4);
-            }
-            else {
-                --cpu.aiMovePulse;
-            }
-
-            SetToward(deltaX);
-            if (cpu.aiMoveIntent == 2) {
-                SetAiKeyDown(DIK_LSHIFT, true);
-            }
-
-            if (cpu.aiJumpCooldown <= 0 &&
-                distanceX > AI_ATTACK_RANGE &&
-                distanceX < AI_ENGAGE_RANGE &&
-                (rand() % 100) < AI_JUMP_CHANCE_PERCENT) {
-                SetAiKeyDown(DIK_SPACE, true);
-                cpu.aiJumpCooldown = AI_JUMP_COOLDOWN_STEPS;
-            }
-            return;
+        if (cpu.aiMovePulse <= 0) {
+            cpu.aiMoveIntent = (distanceX > AI_RUN_RANGE) ? 2 : 1;
+            cpu.aiMovePulse = AI_APPROACH_BURST_STEPS + (rand() % 4);
+        }
+        else {
+            --cpu.aiMovePulse;
         }
 
-        // Spacing band: close enough to fight, stop running in.
-        cpu.aiMovePulse = 0;
-        TryAttack(cpu);
-        if (cpu.aiAttackPulse <= 0) {
-            MaintainSpacing(cpu, distanceX);
+        SetToward(deltaX);
+        if (cpu.aiMoveIntent == 2) {
+            SetAiKeyDown(DIK_LSHIFT, true);
+        }
+
+        if (cpu.aiJumpCooldown <= 0 &&
+            !inStrikeRange &&
+            distanceX < AI_ENGAGE_RANGE &&
+            (rand() % 100) < AI_JUMP_CHANCE_PERCENT) {
+            SetAiKeyDown(DIK_SPACE, true);
+            cpu.aiJumpCooldown = AI_JUMP_COOLDOWN_STEPS;
         }
     }
 };

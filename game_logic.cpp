@@ -1,4 +1,5 @@
 #include "game_logic.h"
+#include "tutorial_guide.h"
 #include "collision.h"
 #include "physics.h"
 #include "input.h"
@@ -7,6 +8,10 @@
 #include "player/narukami/Narukami.h"
 #include "player/yosuke/Yosuke.h"
 #include "ui.h"
+
+static void ApplyBattleResultPoses();
+bool IsBattleCombatActive();
+bool IsBattleEndSequence();
 
 FrameTimer g_GameTimer;
 Fighter* g_Player1 = nullptr;
@@ -21,6 +26,54 @@ bool IsTutorialBattleMode() {
     return g_SelectedBattleMode == BattleMode::Tutorial;
 }
 
+bool ShouldFighterDieOnZeroHealth() {
+    return !IsTutorialBattleMode();
+}
+
+static Fighter* g_DamageAttacker = nullptr;
+static int g_P1HitCombo = 0;
+static int g_HitComboTimeoutSteps = 0;
+
+int GetP1HitCombo() {
+    return g_P1HitCombo;
+}
+
+void DealMeleeHit(Fighter& attacker, Fighter& defender, int damage) {
+    g_DamageAttacker = &attacker;
+    defender.TakeDamage(damage);
+    g_DamageAttacker = nullptr;
+}
+
+void DealSkillHit(Fighter& attacker, Fighter& defender, int damage) {
+    g_DamageAttacker = &attacker;
+    defender.ApplySkillDamage(damage);
+    g_DamageAttacker = nullptr;
+}
+
+static void TryTriggerHitComboWin() {
+    if (IsTutorialBattleMode() || !g_Player2 || IsBattleEndSequence()) return;
+    if (g_Player2->GetHealth() > HIT_COMBO_TARGET_HP) return;
+
+    g_BattlePlayer1Won = true;
+    g_BattleFlowPhase = BattleFlowPhase::Knockout;
+    g_BattleFlowTimer = 0;
+    ApplyBattleResultPoses();
+}
+
+void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage) {
+    if (appliedDamage <= 0) return;
+
+    if (IsTutorialBattleMode() || !IsBattleCombatActive()) return;
+    if (!g_DamageAttacker || g_DamageAttacker->GetPlayerSlot() == victim.GetPlayerSlot()) return;
+
+    if (g_DamageAttacker->IsHumanControlled() && !victim.IsHumanControlled()) {
+        g_P1HitCombo++;
+        g_HitComboTimeoutSteps = HIT_COMBO_TIMEOUT_STEPS;
+    }
+
+    TryTriggerHitComboWin();
+}
+
 void BeginBattleLogicFrame() {
     g_GameTimer.SetLogicSteps(BATTLE_LOGIC_STEPS_PER_FRAME);
 }
@@ -31,17 +84,22 @@ static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
     const int slot = fighter.GetPlayerSlot();
     if (slot < 0 || slot > 1) return;
 
-    if (fighter.health <= 0 || fighter.IsDead()) {
-        g_TutorialRecoverIdleFrames[slot] = 0;
+    // Sandbag: keep damage visible — use H key to heal, not passive refill.
+    if (!fighter.IsHumanControlled()) {
         return;
     }
 
     if (fighter.IsHumanControlled()) {
         fighter.sp = fighter.maxSp;
-        fighter.RestoreStamina(STAMINA_REGEN_PER_STEP * (float)steps * TUTORIAL_STAMINA_REGEN_MULTIPLIER);
+        fighter.RefillStamina();
     }
 
-    if (fighter.health >= fighter.maxHealth || fighter.isHit || fighter.IsInCombatAction()) {
+    if (fighter.health >= fighter.maxHealth) {
+        g_TutorialRecoverIdleFrames[slot] = 0;
+        return;
+    }
+
+    if (fighter.isHit || fighter.IsInCombatAction()) {
         g_TutorialRecoverIdleFrames[slot] = 0;
         return;
     }
@@ -63,6 +121,27 @@ void ApplyTutorialModePerks(int steps) {
 
     if (g_Player1) ApplyTutorialPerksForFighter(*g_Player1, steps);
     if (g_Player2) ApplyTutorialPerksForFighter(*g_Player2, steps);
+}
+
+void PositionTutorialFightersClose() {
+    if (!IsTutorialBattleMode() || !g_Player1 || !g_Player2) return;
+
+    Fighter& p1 = *g_Player1;
+    Fighter& p2 = *g_Player2;
+    p1.facingDirection = 1;
+    p2.facingDirection = -1;
+    p1.position.y = CHARACTER_GROUND_Y;
+    p2.position.y = CHARACTER_GROUND_Y;
+
+    const float scale = GetMakotoDrawScale();
+    const float bodyW = MAKOTO_BODY_WIDTH * scale;
+    const float meleeGap = bodyW + 28.0f * scale;
+
+    p1.position.x = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + 72.0f;
+    p2.position.x = p1.position.x + meleeGap;
+
+    p1.UpdateScaledHurtbox();
+    p2.UpdateScaledHurtbox();
 }
 
 BattleFlowPhase g_BattleFlowPhase = BattleFlowPhase::Countdown;
@@ -113,6 +192,7 @@ void SetupBattleFighters(CharacterId p1Id, CharacterId p2Id) {
     g_SelectedP2 = p2Id;
     g_Player1 = CreateFighter(p1Id, 0, true);
     g_Player2 = CreateFighter(p2Id, 1, false);
+    PositionTutorialFightersClose();
 }
 
 Fighter* GetOpponent(const Fighter& self) {
@@ -199,6 +279,60 @@ void ClampFighterAgainstOpponent(Fighter& self, Fighter& opponent) {
 
     ClampFighterPushX(self);
     self.UpdateScaledHurtbox();
+}
+
+float GetFighterHorizontalGap(const Fighter& a, const Fighter& b) {
+    const AABB boxA = a.GetBodyCollisionBox();
+    const AABB boxB = b.GetBodyCollisionBox();
+    const float aRight = boxA.x + boxA.width;
+    const float bRight = boxB.x + boxB.width;
+
+    if (aRight <= boxB.x) {
+        return boxB.x - aRight;
+    }
+    if (bRight <= boxA.x) {
+        return boxA.x - bRight;
+    }
+    return 0.0f;
+}
+
+static AABB BuildMeleeAttackAabb(
+    const D3DXVECTOR3& fighterPos,
+    int facingDirection,
+    float scale,
+    const AttackData& data)
+{
+    AABB box;
+    box.width = data.width * scale;
+    box.height = data.height * scale;
+    const float forward = data.offsetX * scale;
+    const float vertical = data.offsetY * scale;
+
+    if (facingDirection == 1) {
+        box.x = fighterPos.x + forward;
+    }
+    else {
+        box.x = fighterPos.x - forward - box.width;
+    }
+    box.y = fighterPos.y + vertical;
+    return box;
+}
+
+bool WouldMeleeAttackReach(const Fighter& attacker, const Fighter& defender, const AttackData& data) {
+    const AABB attackBox = BuildMeleeAttackAabb(
+        attacker.GetPosition(),
+        attacker.GetFacingDirection(),
+        GetCharacterRenderScale(),
+        data);
+    return GetAabbHorizontalGap(attackBox, defender.GetHurtbox()) <= 0.0f;
+}
+
+bool IsFighterInMeleeStrikeRange(const Fighter& attacker, const Fighter& defender) {
+    const AttackData neutral = {
+        ATK_NEUTRAL_START, ATK_NEUTRAL_END, ATK_NEUTRAL_DAMAGE,
+        ATK_NEUTRAL_OFFSET_X, ATK_NEUTRAL_OFFSET_Y, ATK_NEUTRAL_WIDTH, ATK_NEUTRAL_HEIGHT
+    };
+    return WouldMeleeAttackReach(attacker, defender, neutral);
 }
 
 static void EnforceFighterSideOrder(Fighter& a, Fighter& b) {
@@ -334,6 +468,7 @@ static void ApplyBattleResultPoses() {
 }
 
 void EnsureBattleResultPosesApplied() {
+    if (IsTutorialBattleMode()) return;
     if (g_BattleResultPosesApplied || !g_Player1 || !g_Player2) return;
 
     const bool p1Dead = g_Player1->IsDead();
@@ -356,8 +491,6 @@ void EnsureBattleResultPosesApplied() {
 void ResetBattleFlow() {
     g_BattleExitHandled = false;
     g_BattleResultPosesApplied = false;
-    g_TutorialRecoverIdleFrames[0] = 0;
-    g_TutorialRecoverIdleFrames[1] = 0;
 
     if (IsTutorialBattleMode()) {
         g_BattleFlowPhase = BattleFlowPhase::Fight;
@@ -371,7 +504,15 @@ void ResetBattleFlow() {
         g_BattleCountdownDigit = 3;
         g_BattleTimeRemainingSteps = BATTLE_ROUND_TIME_STEPS;
     }
+    g_P1HitCombo = 0;
+    g_HitComboTimeoutSteps = 0;
     g_BattlePlayer1Won = true;
+    if (IsTutorialBattleMode()) {
+        g_TutorialRecoverIdleFrames[0] = 0;
+        g_TutorialRecoverIdleFrames[1] = 0;
+        ResetTutorialGuide();
+        PositionTutorialFightersClose();
+    }
 }
 
 bool IsBattleCombatActive() {
@@ -441,15 +582,54 @@ int GetGuardTowardDirection(const Fighter& self) {
     return -GetGuardAwayDirection(self);
 }
 
-// Hold direction toward the opponent to guard (face them while blocking).
-// Walk/run use the same direction keys when approaching — fighters must prefer
-// locomotion over guard whenever isMoving is true (see each fighter's state machine).
-bool IsHoldingGuardInput(const Fighter& self) {
-    const int toward = GetGuardTowardDirection(self);
-    if (toward < 0) {
+HorizontalMoveInput ReadHorizontalMoveInput() {
+    HorizontalMoveInput out;
+    out.leftHeld = IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
+    out.rightHeld = IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
+    if (out.leftHeld && !out.rightHeld) {
+        out.isMoving = true;
+        out.moveDirX = -1.0f;
+    }
+    else if (out.rightHeld && !out.leftHeld) {
+        out.isMoving = true;
+        out.moveDirX = 1.0f;
+    }
+    return out;
+}
+
+bool IsHoldingBackInput(const Fighter& self) {
+    const int away = GetGuardAwayDirection(self);
+    if (away < 0) {
         return IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
     }
     return IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
+}
+
+// Guard: hold back (away from opponent) + S. Shift is reserved for Run.
+bool IsHoldingGuardInput(const Fighter& self) {
+    if (IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT)) {
+        return false;
+    }
+    return IsHoldingBackInput(self) && IsGameKeyDown(DIK_S);
+}
+
+float ComputeSmoothedLocomotionSpeed(int baseVelocity, bool wantsRun, float& runBlend, int steps) {
+    const float target = wantsRun ? 1.0f : 0.0f;
+    const float delta = FIGHTER_RUN_BLEND_RATE * (float)steps;
+    if (runBlend < target) {
+        runBlend += delta;
+        if (runBlend > target) runBlend = target;
+    }
+    else if (runBlend > target) {
+        runBlend -= delta;
+        if (runBlend < target) runBlend = target;
+    }
+    const float multiplier = 1.0f + runBlend;
+    return (float)baseVelocity * multiplier;
+}
+
+bool ShouldUseRunLocomotion(float runBlend) {
+    return runBlend >= FIGHTER_RUN_ANIM_THRESHOLD;
 }
 
 bool IsFighterAirborne(const Fighter& self) {
@@ -498,22 +678,21 @@ void UpdateBattleFlow() {
 
     case BattleFlowPhase::Fight:
         if (!IsTutorialBattleMode()) {
+            if (g_HitComboTimeoutSteps > 0) {
+                g_HitComboTimeoutSteps -= steps;
+                if (g_HitComboTimeoutSteps <= 0) {
+                    g_HitComboTimeoutSteps = 0;
+                    g_P1HitCombo = 0;
+                }
+            }
+
             g_BattleTimeRemainingSteps -= steps;
             if (g_BattleTimeRemainingSteps < 0) {
                 g_BattleTimeRemainingSteps = 0;
             }
             if (g_BattleTimeRemainingSteps == 0 && g_Player1 && g_Player2) {
-                const int p1Hp = g_Player1->GetHealth();
                 const int p2Hp = g_Player2->GetHealth();
-                if (p1Hp > p2Hp) {
-                    g_BattlePlayer1Won = true;
-                }
-                else if (p2Hp > p1Hp) {
-                    g_BattlePlayer1Won = false;
-                }
-                else {
-                    g_BattlePlayer1Won = true;
-                }
+                g_BattlePlayer1Won = (p2Hp <= HIT_COMBO_TARGET_HP);
                 g_BattleFlowPhase = BattleFlowPhase::Knockout;
                 g_BattleFlowTimer = 0;
                 ApplyBattleResultPoses();
@@ -521,7 +700,9 @@ void UpdateBattleFlow() {
             }
         }
 
-        if (g_Player1 && g_Player2 && (g_Player1->IsDead() || g_Player2->IsDead())) {
+        if (!IsTutorialBattleMode() &&
+            g_Player1 && g_Player2 &&
+            (g_Player1->IsDead() || g_Player2->IsDead())) {
             g_BattlePlayer1Won = g_Player2->IsDead() && !g_Player1->IsDead();
             if (g_Player1->IsDead() && g_Player2->IsDead()) {
                 g_BattlePlayer1Won = false;

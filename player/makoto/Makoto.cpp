@@ -4,6 +4,7 @@
 #include "../../renderer.h"
 #include "../../game_logic.h"
 #include "../../input.h"
+#include "../../audio.h"
 #include <cmath>
 #include <float.h>
 #include <optional>
@@ -279,17 +280,21 @@ static AABB BuildCenteredHitbox(const D3DXVECTOR3& center, float halfW, float ha
     return { center.x - halfW, center.y - halfH, halfW * 2.0f, halfH * 2.0f };
 }
 
-static void TrySkillHit(Fighter& enemy, bool& hitFlag, int damage, const AABB& effectBox) {
-    if (hitFlag || enemy.IsDead()) return;
+static void TrySkillHit(Fighter& attacker, Fighter& enemy, bool& hitFlag, int damage, const AABB& effectBox) {
+    if (hitFlag || !enemy.CanReceiveHit()) return;
     if (!CollisionHelper::AABBIntersect(effectBox, enemy.GetHurtbox())) return;
-    enemy.ApplySkillDamage(damage);
+    DealSkillHit(attacker, enemy, damage);
     hitFlag = true;
 }
 
-static void TrySkillHitOnTarget(Fighter& enemy, bool& hitFlag, int damage) {
-    if (hitFlag || enemy.IsDead()) return;
-    enemy.ApplySkillDamage(damage);
+static void TrySkillHitOnTarget(Fighter& attacker, Fighter& enemy, bool& hitFlag, int damage) {
+    if (hitFlag || !enemy.CanReceiveHit()) return;
+    DealSkillHit(attacker, enemy, damage);
     hitFlag = true;
+}
+
+static void PlayMakotoUltimateSummonSfx() {
+    g_SoundManager.PlayPersonaSummonSfx();
 }
 
 static D3DXVECTOR3 GetEnemyHurtboxCenter(Fighter& enemy) {
@@ -517,8 +522,8 @@ void Makoto::CheckAttackCollision(Fighter& enemy) {
             float dashY = position.y - DASH_HITBOX_UP * s;
 
             AABB dashBox = { dashX, dashY, dashW, dashH };
-            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox())) {
-                const_cast<Fighter&>(enemy).TakeDamage(DASH_HIT_DAMAGE);
+            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox()) && enemy.CanReceiveHit()) {
+                DealMeleeHit(static_cast<Fighter&>(*this), const_cast<Fighter&>(enemy), DASH_HIT_DAMAGE);
                 dashHasHit = true;
                 OnMeleeHitConnected(enemy);
             }
@@ -549,8 +554,8 @@ void Makoto::CheckAttackCollision(Fighter& enemy) {
         AABB attackBox = { attackX, attackY, boxW, boxH };
         AABB enemyBox = enemy.GetHurtbox();
 
-        if (!hitThisAttack && CollisionHelper::AABBIntersect(attackBox, enemyBox)) {
-            const_cast<Fighter&>(enemy).TakeDamage(data->damage);
+        if (!hitThisAttack && enemy.CanReceiveHit() && CollisionHelper::AABBIntersect(attackBox, enemyBox)) {
+            DealMeleeHit(static_cast<Fighter&>(*this), const_cast<Fighter&>(enemy), data->damage);
             hitThisAttack = true;
             OnMeleeHitConnected(enemy);
         }
@@ -660,6 +665,10 @@ void Makoto::UpdateLiveEffectPositions(Fighter& enemy) {
     }
 }
 
+void Makoto::SyncHeldInputState() {
+    attackButtonHeld = IsGameMouseDown(VK_LBUTTON);
+}
+
 void Makoto::Update() {
     if (IsPlayingResultPose()) {
         maxFrame = GetMaxFrameForState(currentState);
@@ -670,38 +679,42 @@ void Makoto::Update() {
         if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
         if (currentState == MAKOTO_WIN || currentState == THANATOS_WIN) {
+            if (resultPoseHoldFrame < 0) {
+                const MakotoTexture* winTex = GetTextureForState(currentState);
+                if (winTex && winTex->texture) {
+                    resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                        winTex->texture,
+                        MAKOTO_CELL_SIZE,
+                        MAKOTO_CELL_SIZE,
+                        winTex->cols,
+                        maxFrame);
+                }
+                else {
+                    resultPoseHoldFrame = maxFrame - 1;
+                }
+            }
+
+            const int winEndFrame = resultPoseHoldFrame;
+            const int winAnimFrames = winEndFrame + 1;
             if (!resultPoseAnimLocked) {
-                if (currentFrame < maxFrame - 1) {
+                if (currentFrame < winEndFrame) {
                     if (AdvanceOneShotFrame(
                         animAccumulator,
                         currentFrame,
                         steps,
                         BATTLE_WIN_ANIM_TICKS,
-                        maxFrame)) {
+                        winAnimFrames)) {
+                        currentFrame = winEndFrame;
                         resultPoseAnimLocked = true;
                     }
                 }
                 else {
+                    currentFrame = winEndFrame;
                     resultPoseAnimLocked = true;
                 }
             }
-
-            if (resultPoseAnimLocked) {
-                if (resultPoseHoldFrame < 0) {
-                    const MakotoTexture* winTex = GetTextureForState(currentState);
-                    if (winTex && winTex->texture) {
-                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
-                            winTex->texture,
-                            MAKOTO_CELL_SIZE,
-                            MAKOTO_CELL_SIZE,
-                            winTex->cols,
-                            maxFrame);
-                    }
-                    else {
-                        resultPoseHoldFrame = maxFrame - 1;
-                    }
-                }
-                currentFrame = resultPoseHoldFrame;
+            else {
+                currentFrame = winEndFrame;
             }
         }
         else if (currentState == MAKOTO_LOSE) {
@@ -775,21 +788,19 @@ void Makoto::Update() {
     }
 
     bool isRunning = IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT);
-    bool isMoving = false;
-    float moveDirX = 0.0f;
+    const HorizontalMoveInput move = ReadHorizontalMoveInput();
+    bool isMoving = move.isMoving;
+    float moveDirX = move.moveDirX;
 
-    if (IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A)) {
+    if (move.leftHeld && !move.rightHeld) {
         facingDirection = -1;
-        moveDirX = -1.0f;
-        isMoving = true;
     }
-    if (IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D)) {
+    else if (move.rightHeld && !move.leftHeld) {
         facingDirection = 1;
-        moveDirX = 1.0f;
-        isMoving = true;
     }
 
-    if (isRunning && isMoving) {
+    const bool wantsRun = isRunning && isMoving;
+    if (wantsRun) {
         if (!DrainStaminaWhileRunning(animSteps)) {
             isRunning = false;
         }
@@ -797,7 +808,9 @@ void Makoto::Update() {
     else {
         RegenStamina(animSteps);
     }
-    int currentVelocity = isRunning ? (velocity * 2) : velocity;
+    const float currentVelocity = ComputeSmoothedLocomotionSpeed(
+        velocity, isRunning && isMoving, runBlend, steps);
+    const bool useRunAnim = ShouldUseRunLocomotion(runBlend);
 
     if (AllowsMakotoMovement(currentState, isSuperMoveActive) &&
         isMoving && currentState != DASH && currentState != DODGE_FORWARD && currentState != DODGE_BACKWARD) {
@@ -965,6 +978,7 @@ void Makoto::Update() {
         }
 
         if (isKey3 && (CanUseSpaceChord() || isJumpPressed) && TryConsumeSp(SP_COST_SUMMON_AIR)) {
+            PlayMakotoUltimateSummonSfx();
             currentState = SUMMON_AIR;
             currentFrame = 0;
             maxFrame = GetMaxFrameForState(SUMMON_AIR);
@@ -983,6 +997,7 @@ void Makoto::Update() {
             return;
         }
         if (isKey4 && (CanUseSpaceChord() || isJumpPressed) && !messiahChordConsumed && TryConsumeSp(SP_COST_SUMMON_AIR_2)) {
+            PlayMakotoUltimateSummonSfx();
             currentState = SUMMON_AIR_2;
             currentFrame = 0;
             messiahChordConsumed = true;
@@ -1187,18 +1202,21 @@ void Makoto::Update() {
     if (currentState == NEUTRAL_AIR || currentState == UP_AIR || currentState == SIDE_AIR || currentState == DOWN_AIR) {
     }
     else if (isSummon1 && currentState != SUMMON_1 && currentState != SUMMON_1_ORPHEUS && TryConsumeSp(SP_COST_SUMMON_1)) {
+        PlayMakotoUltimateSummonSfx();
         nextState = SUMMON_1; currentFrame = 0;
         isOrpheusActive = false; isAGIActive = false; orpheusFrame = 0; agiFrame = 0;
         orpheusAnimationComplete = false; agiAnimationComplete = false;
         isSuperMoveActive = false; hitAGI = false;
     }
     else if (isSummon2 && currentState != SUMMON_2 && currentState != SUMMON_2_JACKFROST && TryConsumeSp(SP_COST_SUMMON_2)) {
+        PlayMakotoUltimateSummonSfx();
         nextState = SUMMON_2; currentFrame = 0;
         isJackFrostActive = false; isMabufuActive = false; jackfrostFrame = 0; mabufuFrame = 0;
         jackfrostAnimationComplete = false; mabufuAnimationComplete = false;
         isSuperMoveActive = false; hitMabufu = false;
     }
     else if (isSummonAirThanatos && currentState != SUMMON_AIR && currentState != SUMMON_AIR_MAZIODYNE && TryConsumeSp(SP_COST_SUMMON_AIR)) {
+        PlayMakotoUltimateSummonSfx();
         nextState = SUMMON_AIR;
         currentFrame = 0;
         maxFrame = GetMaxFrameForState(SUMMON_AIR);
@@ -1214,6 +1232,7 @@ void Makoto::Update() {
         spaceChordBuffer = 0;
     }
     else if (isSummonAirMessiah && currentState != SUMMON_AIR_2 && currentState != SUMMON_AIR_MESSIAH && TryConsumeSp(SP_COST_SUMMON_AIR_2)) {
+        PlayMakotoUltimateSummonSfx();
         nextState = SUMMON_AIR_2;
         currentFrame = 0;
         messiahChordConsumed = true;
@@ -1232,6 +1251,7 @@ void Makoto::Update() {
         spaceChordBuffer = 0;
     }
     else if (isThanatosSlashPressed && TryConsumeSp(SP_COST_THANATOS_SLASH)) {
+        PlayMakotoUltimateSummonSfx();
         slashAnimTimer = 0;
         slashTotalFrames = 0;
         skillEndHold = 0;
@@ -1276,8 +1296,8 @@ void Makoto::Update() {
     else if (isAtkUpPressed && TryConsumeStamina(STAMINA_COST_ACTION)) { nextState = ATTACK_UP; }
     else if (isCrouchPressed && isAttackPressed) { nextState = CROUCH_ATTACK; }
     else if (isAttackPressed) { nextState = ATTACK; }
-    else if (isMoving) { nextState = isRunning ? RUN : WALK; }
     else if (isGuardPressed) { nextState = IsOnGround() ? GUARD : GUARD_AIR; }
+    else if (isMoving) { nextState = useRunAnim ? RUN : WALK; }
     else if (isCrouchPressed && !isMoving) { nextState = CROUCH; }
     else {
         if (noInputFrames >= IDLE_THRESHOLD_FRAMES) { nextState = IDLE; currentFrame = 0; noInputFrames = 0; }
@@ -1417,7 +1437,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
             else if (isAGIActive && !agiAnimationComplete) {
                 agiFrame++;
                 if (!hitAGI && agiFrame >= 2 && agiFrame <= makotoAGI.maxFrame - 1) {
-                    TrySkillHitOnTarget(enemy, hitAGI, 45);
+                    TrySkillHitOnTarget(static_cast<Fighter&>(*this), enemy, hitAGI, 45);
                 }
                 if (agiFrame >= makotoAGI.maxFrame) {
                     agiFrame = makotoAGI.maxFrame - 1;
@@ -1449,7 +1469,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
             else if (isMabufuActive && !mabufuAnimationComplete) {
                 mabufuFrame++;
                 if (!hitMabufu && mabufuFrame >= 1 && mabufuFrame <= 3) {
-                    TrySkillHitOnTarget(enemy, hitMabufu, 50);
+                    TrySkillHitOnTarget(static_cast<Fighter&>(*this), enemy, hitMabufu, 50);
                 }
                 if (mabufuFrame >= makotoMabufu.maxFrame) {
                     mabufuFrame = makotoMabufu.maxFrame - 1;
@@ -1475,7 +1495,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
             if (isMaziodyneActive && !maziodyneAnimationComplete) {
                 maziodyneFrame++;
                 if (!hitMaziodyne && maziodyneFrame >= 2 && maziodyneFrame <= 5) {
-                    TrySkillHitOnTarget(enemy, hitMaziodyne, 55);
+                    TrySkillHitOnTarget(static_cast<Fighter&>(*this), enemy, hitMaziodyne, 55);
                 }
                 if (maziodyneFrame >= makotoMaziodyne.maxFrame) {
                     maziodyneFrame = makotoMaziodyne.maxFrame - 1;
@@ -1496,7 +1516,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
         case THANATOS_SLASH:
             slashFrame++;
             if (!hitSlash && slashFrame >= 3 && slashFrame <= 6) {
-                TrySkillHitOnTarget(enemy, hitSlash, 65);
+                TrySkillHitOnTarget(static_cast<Fighter&>(*this), enemy, hitSlash, 65);
             }
             if (slashFrame >= makotoThanatosSlash.maxFrame) {
                 slashFrame = makotoThanatosSlash.maxFrame - 1;
@@ -1518,7 +1538,7 @@ void Makoto::UpdatePersonaLogic(Fighter& enemy, int steps) {
             if (isMegidolaonActive && !megidolaonAnimationComplete) {
                 megidolaonFrame++;
                 if (!hitMegidolaon && megidolaonFrame >= 3 && megidolaonFrame <= makotoMegidolaon.maxFrame - 1) {
-                    TrySkillHitOnTarget(enemy, hitMegidolaon, 75);
+                    TrySkillHitOnTarget(static_cast<Fighter&>(*this), enemy, hitMegidolaon, 75);
                 }
                 if (megidolaonFrame >= makotoMegidolaon.maxFrame) {
                     megidolaonFrame = makotoMegidolaon.maxFrame - 1;
@@ -1578,11 +1598,14 @@ void Makoto::Render(LPD3DXSPRITE sprite) {
     }
 
     if (currentState == MAKOTO_WIN && makotoThanatosWin.texture && bodyFrame >= 0) {
+        const int winFrame = resultPoseAnimLocked && resultPoseHoldFrame >= 0
+            ? resultPoseHoldFrame
+            : bodyFrame;
         const D3DXVECTOR3 thanatosWinPos = GetOrpheusPosBehindMakoto(position, facingDirection);
         DrawMakotoEffectSprite(
             sprite,
             makotoThanatosWin,
-            bodyFrame,
+            winFrame,
             thanatosWinPos,
             fxColor,
             facingDirection,
@@ -1822,6 +1845,7 @@ void Makoto::TakeDamage(int damage) {
             health -= appliedDamage;
             if (health < 0) health = 0;
         }
+        NotifyFighterDamageApplied(*this, appliedDamage);
         UpdateScaledHurtbox();
         return;
     }
@@ -1833,9 +1857,12 @@ void Makoto::TakeDamage(int damage) {
         BeginSandbagHitReaction();
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
+    UpdateScaledHurtbox();
 }
 
 bool Makoto::IsInGuardState() const {
@@ -1940,6 +1967,17 @@ void Makoto::BeginVictoryPose() {
     animAccumulator = 0;
     maxFrame = GetMaxFrameForState(MAKOTO_WIN);
     if (maxFrame < 1) maxFrame = 1;
+    {
+        const MakotoTexture* winTex = GetTextureForState(MAKOTO_WIN);
+        resultPoseHoldFrame = (winTex && winTex->texture)
+            ? FindLastVisibleSheetFrame(
+                winTex->texture,
+                MAKOTO_CELL_SIZE,
+                MAKOTO_CELL_SIZE,
+                winTex->cols,
+                maxFrame)
+            : maxFrame - 1;
+    }
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateScaledHurtbox();
@@ -1965,6 +2003,10 @@ bool Makoto::IsPlayingResultPose() const {
     return currentState == MAKOTO_WIN ||
         currentState == THANATOS_WIN ||
         currentState == MAKOTO_LOSE;
+}
+
+bool Makoto::IsInKnockdownReaction() const {
+    return isHit || currentState == DAMAGE || currentState == RECOVER;
 }
 
 bool Makoto::IsInCombatAction() const {

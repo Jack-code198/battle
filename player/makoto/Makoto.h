@@ -116,6 +116,7 @@ public:
     ~Makoto();
 
     void Update() override;
+    void SyncHeldInputState() override;
     void Render(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
     void Reset() override;
@@ -123,11 +124,13 @@ public:
     void BeginVictoryPose() override;
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
+    bool IsInKnockdownReaction() const override;
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;
 
     int GetCurrentState() const { return currentState; }
+    int GetActionState() const override { return currentState; }
     int GetCurrentFrame() const { return currentFrame; }
     bool IsSuperMoveActive() const override { return isSuperMoveActive; }
     bool IsGray() const { return isMakotoGray; }

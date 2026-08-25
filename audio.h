@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 // =============================================================================
 // Sound module (BMCS2224) — OO FMOD wrapper.
 // Initialise / Update / Shutdown own the FMOD system. Menu + battle BGM loop;
@@ -17,6 +19,7 @@ public:
     void PlayBattleMusic();
     void StopBattleMusic();
     void PlaySelectionSound();
+    void PlayPersonaSummonSfx(float volume = PERSONA_SUMMON_SFX_VOLUME);
     void ToggleMusicMute();
     bool IsMusicMuted() const { return isMuted; }
     void Update();
@@ -30,6 +33,7 @@ private:
     void* menuMusic;
     void* battleMusic;
     void* selectionSound;
+    void* personaSummonSfx;
     void* musicChannel;
     void* currentTrack;
     bool isInitialised;

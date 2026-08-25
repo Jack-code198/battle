@@ -282,7 +282,20 @@ inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_GROWTH = 11.0f;
 inline constexpr float NARUKAMI_MYRIAD_RIPPLE_RING_SCALE = 42.0f;
 inline constexpr int NARUKAMI_HIT_STUN_FRAMES = 20;
 // Game loop / frame-timer clamps (named — do not hardcode Sleep/step caps in main).
+// Runtime FPS cap, adjustable from the Options screen (60 / 120 / 144).
+extern int g_TargetFPS;
+inline DWORD GetTargetFrameIntervalMs() {
+    if (g_TargetFPS <= 0) return 0;
+    return (DWORD)(1000.0 / (double)g_TargetFPS + 0.5);
+}
 inline constexpr DWORD GAME_LOOP_MIN_FRAME_MS = 0;
+
+// Runtime screen brightness, adjustable via a slider on the Options screen.
+inline constexpr int BRIGHTNESS_MIN = 50;
+inline constexpr int BRIGHTNESS_MAX = 150;
+inline constexpr int BRIGHTNESS_DEFAULT = 100;
+inline constexpr int BRIGHTNESS_STEP = 5;
+extern int g_BrightnessLevel;
 // One logic tick per rendered battle frame (60 Hz @ vsync).
 inline constexpr int BATTLE_LOGIC_STEPS_PER_FRAME = 1;
 inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 3;
@@ -290,7 +303,8 @@ inline constexpr int GAME_TIMER_MAX_STEPS_PER_FRAME = 3;
 inline constexpr float BATTLE_GAMEPLAY_SPEED = 0.96f;
 
 // Simple P2 CPU AI (distances in screen pixels; cooldowns in update steps).
-inline constexpr float AI_ATTACK_RANGE = 82.0f;
+inline constexpr float AI_ATTACK_RANGE = 82.0f;   // legacy engage band (center-ish)
+inline constexpr float AI_STRIKE_GAP = 10.0f;     // pushbox gap — must nearly touch to swing
 inline constexpr float AI_APPROACH_STOP_GAP = 22.0f;
 inline constexpr float AI_SPACING_RANGE = 58.0f;
 inline constexpr float AI_ENGAGE_RANGE = 160.0f;
@@ -298,7 +312,7 @@ inline constexpr float AI_APPROACH_RANGE = 130.0f;
 inline constexpr float AI_RETREAT_RANGE = 50.0f;
 inline constexpr float AI_RUN_RANGE = 200.0f;
 inline constexpr int AI_ATTACK_COOLDOWN_STEPS = 32;
-inline constexpr int AI_ATTACK_PULSE_STEPS = 1;
+inline constexpr int AI_ATTACK_PULSE_STEPS = 4;
 inline constexpr int AI_SKILL_ATTACK_PULSE_STEPS = 5;
 inline constexpr int AI_JUMP_COOLDOWN_STEPS = 140;
 inline constexpr int AI_SIDE_ATTACK_CHANCE_PERCENT = 16;
@@ -355,6 +369,11 @@ inline constexpr int BATTLE_LOSE_ANIM_TICKS = 10;
 inline constexpr int BATTLE_ROUND_TIME_SECONDS = 99;
 inline constexpr int BATTLE_ROUND_TIME_STEPS = BATTLE_ROUND_TIME_SECONDS * 60;
 
+// Hit-combo mode: bring the foe to this HP (or below) before time runs out.
+inline constexpr int HIT_COMBO_TARGET_HP = 1;
+inline constexpr int HIT_COMBO_TIMEOUT_STEPS = 90;
+inline constexpr int HIT_COMBO_MIN_DISPLAY = 2;
+
 // Mirror match: tint P2 so same-character fights stay readable.
 inline constexpr int MIRROR_MATCH_P2_TINT_R = 255;
 inline constexpr int MIRROR_MATCH_P2_TINT_G = 200;
@@ -399,7 +418,7 @@ inline constexpr float PERSONA_EFFECT_SCALE = 4.5f;
 // Narukami Izanagi matches Arsene (1.0 body scale), not Makoto's 4.5 personas.
 inline constexpr float NARUKAMI_IZANAGI_SCALE = 1.0f;
 inline constexpr float NARUKAMI_STANCE_FEET_Y = 52.0f;
-inline constexpr float NARUKAMI_RUN_FEET_Y = 43.0f;
+inline constexpr float NARUKAMI_RUN_FEET_Y = NARUKAMI_STANCE_FEET_Y;
 inline constexpr float NARUKAMI_CROUCH_FEET_Y = 44.0f;
 inline constexpr int JOKER_ALL_OUT_TICKS = 7;
 inline constexpr int JOKER_ALL_OUT_MEMBER_TICKS = 18;
@@ -504,6 +523,11 @@ inline constexpr float HUD_HP_BAR_HEIGHT = 16.0f;
 inline constexpr float HUD_SP_BAR_HEIGHT = 10.0f;
 inline constexpr float HUD_BAR_GAP = 5.0f;
 inline constexpr float HUD_NAME_OFFSET_Y = -22.0f;
+inline constexpr float HUD_COMBO_OFFSET_Y = 8.0f;
+
+inline constexpr int JOKER_WIN_RUN_SPEED = 10;
+inline constexpr float JOKER_WIN_RUN_OFFSCREEN_MARGIN = 120.0f;
+inline constexpr float PERSONA_SUMMON_SFX_VOLUME = 2.0f;
 // Font assets (AddFontResourceEx path + D3DXCreateFont family name)
 inline constexpr const char* NORMAL_FONT_FILE = "assets/font/normal_font.TTF";
 inline constexpr const char* NORMAL_FONT_FAMILY = "BM space";
@@ -650,7 +674,9 @@ inline constexpr BYTE YOSUKE_COLORKEY_B = 84;
 inline constexpr int YOSUKE_MAX_HEALTH = 400;
 inline constexpr int YOSUKE_MOVE_SPEED = 6;
 inline constexpr float YOSUKE_STANCE_FEET_Y = 52.0f;
-inline constexpr float YOSUKE_RUN_FEET_Y = 47.0f;
+inline constexpr float YOSUKE_RUN_FEET_Y = YOSUKE_STANCE_FEET_Y;
+inline constexpr float FIGHTER_RUN_BLEND_RATE = 0.14f;
+inline constexpr float FIGHTER_RUN_ANIM_THRESHOLD = 0.55f;
 inline constexpr float YOSUKE_JIRAIYA_SCALE = 1.0f;
 inline constexpr float YOSUKE_INTRO_DROP_START_Y = -120.0f;
 

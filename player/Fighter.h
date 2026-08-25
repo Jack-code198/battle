@@ -22,6 +22,7 @@ protected:
     friend struct AiBrain;
     // Hold last laser / ultimate effect frame for impact.
     int skillEndHold;
+    float runBlend;
 
     // Integrate gravity for `steps` ticks; keeps character verticalVelocity in sync.
     void ApplyPhysicsGravitySteps(int steps, float& verticalVelocityIO);
@@ -57,10 +58,15 @@ public:
     virtual void ApplySkillDamage(int damage) { TakeDamage(damage); }
     virtual void Reset() = 0;
 
+    virtual void SyncHeldInputState() {}
+
     // Round result poses (win / lose sheets).
     virtual void BeginVictoryPose() {}
     virtual void BeginDefeatPose() {}
     virtual bool IsPlayingResultPose() const { return false; }
+    virtual bool IsInKnockdownReaction() const { return false; }
+    virtual int GetActionState() const { return -1; }
+    bool CanReceiveHit() const;
     // True while attacking / jumping / skills — used by passive AI.
     virtual bool IsInCombatAction() const { return false; }
     virtual bool IsInGuardState() const { return false; }

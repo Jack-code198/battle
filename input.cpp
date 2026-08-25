@@ -216,7 +216,8 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             ToggleFullscreen();
             break;
         case 'H':
-            // Training heal only — do NOT Reset() (that teleports P2 and replays intro).
+            // Tutorial only — battle mode has no manual heal.
+            if (!IsTutorialBattleMode()) break;
             if (!g_Player1 || !g_Player2) break;
             g_Player1->health = g_Player1->GetMaxHealth();
             g_Player1->isDead = false;

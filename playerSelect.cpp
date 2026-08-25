@@ -242,9 +242,19 @@ void NotifyPlayerSelectDeviceLost() {
 }
 
 void NotifyPlayerSelectDeviceReset() {
-    if (g_PlayerSelectFont) g_PlayerSelectFont->OnResetDevice();
-    if (g_PlayerSelectTitleFont) g_PlayerSelectTitleFont->OnResetDevice();
-    if (g_PlayerSelectHintFont) g_PlayerSelectHintFont->OnResetDevice();
+    if (g_PlayerSelectFont && FAILED(g_PlayerSelectFont->OnResetDevice())) {
+        g_PlayerSelectFont->Release();
+        g_PlayerSelectFont = nullptr;
+    }
+    if (g_PlayerSelectTitleFont && FAILED(g_PlayerSelectTitleFont->OnResetDevice())) {
+        g_PlayerSelectTitleFont->Release();
+        g_PlayerSelectTitleFont = nullptr;
+    }
+    if (g_PlayerSelectHintFont && FAILED(g_PlayerSelectHintFont->OnResetDevice())) {
+        g_PlayerSelectHintFont->Release();
+        g_PlayerSelectHintFont = nullptr;
+    }
+    LoadPlayerSelectFont();
 }
 
 // ---------------------------------------------------------------------------

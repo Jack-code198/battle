@@ -4,6 +4,8 @@
 #include "../../renderer.h"
 #include "../../game_logic.h"
 #include "../../input.h"
+#include "../../audio.h"
+#include "../../collision.h"
 #include <cmath>
 #include <optional>
 #include <stdio.h>
@@ -19,7 +21,7 @@ constexpr int kCellSize = MAKOTO_CELL_SIZE;
 constexpr int kIntroTicks = MAKOTO_INTRO_TICKS;
 constexpr int kActionTicks = MAKOTO_ACTION_TICKS;
 constexpr int kWalkAnimTicks = MAKOTO_LOOP_TICKS_FAST;
-constexpr int kRunAnimTicks = 2;
+constexpr int kRunAnimTicks = MAKOTO_LOOP_TICKS_FAST;
 constexpr int kLocomotionFrameCount = 4;
 constexpr int kCrescentSlashTicks = NARUKAMI_CROSS_SLASH_TICKS;
 constexpr int kLoopSlowTicks = MAKOTO_LOOP_TICKS_SLOW;
@@ -48,6 +50,11 @@ constexpr int kGarudyneDamage = 70;
 constexpr int kFlyingKunaiDamage = 45;
 constexpr int kCrescentSlashDamage = 35;
 constexpr int kMoonsaultDamage = 40;
+
+constexpr float kGarudyneSpinSpeed = 14.0f;
+constexpr float kGarudyneArriveRadius = 20.0f;
+constexpr float kYosukeMeleeReachBonus = 36.0f;
+constexpr float kYosukeSkillProximityX = 96.0f;
 
 constexpr int kSpCostPersona = SP_COST_SUMMON_1;
 constexpr int kSpCostMirage = SP_COST_SUMMON_2;
@@ -142,10 +149,21 @@ D3DXVECTOR3 GetEnemyHurtboxCenter(const Fighter& enemy) {
 }
 
 D3DXVECTOR3 GetSkillEffectPos(const Fighter& enemy) {
+    return GetEnemyHurtboxCenter(enemy);
+}
+
+D3DXVECTOR3 GetJiraiyaAtEnemyPos(const Fighter& enemy) {
     const AABB& hb = enemy.GetHurtbox();
     return D3DXVECTOR3(
         hb.x + hb.width * 0.5f,
-        hb.y + hb.height * NARUKAMI_ZIO_HIT_BODY_Y_RATIO,
+        CHARACTER_GROUND_Y,
+        0.0f);
+}
+
+D3DXVECTOR3 GetJiraiyaBehindYosukePos(const D3DXVECTOR3& yosukePos, int yosukeFacing) {
+    return D3DXVECTOR3(
+        yosukePos.x - (float)yosukeFacing * kJiraiyaBehindX,
+        yosukePos.y - kJiraiyaBehindY,
         0.0f);
 }
 
@@ -157,6 +175,10 @@ D3DXVECTOR3 GetMirageSlashJiraiyaPos(const Fighter& enemy, int yosukeFacing) {
         frontEdge - (float)yosukeFacing * kMirageFrontOffset * scale,
         CHARACTER_GROUND_Y,
         0.0f);
+}
+
+D3DXVECTOR3 GetJiraiyaAtEnemyFrontPos(const Fighter& enemy, int yosukeFacing) {
+    return GetMirageSlashJiraiyaPos(enemy, yosukeFacing);
 }
 
 const YosukeTexture* GetTextureForState(int state) {
@@ -343,14 +365,38 @@ void DrawCenteredLayer(
 {
     if (!sprite || !tex.texture) return;
     SetFrameRect(g_SrcRect, tex, frameIndex);
-    DrawCenteredEffectSprite(
+    DrawScaledCharacterSprite(
         sprite,
         tex.texture,
         &g_SrcRect,
         centerPos,
+        1,
         scale,
         color,
-        (float)kCellSize);
+        MAKOTO_BODY_HEIGHT,
+        YOSUKE_STANCE_FEET_Y);
+}
+
+void DrawSkillEffectLayer(
+    LPD3DXSPRITE sprite,
+    const YosukeTexture& tex,
+    int frameIndex,
+    const D3DXVECTOR3& feetPos,
+    int facingDirection,
+    D3DCOLOR color)
+{
+    if (!sprite || !tex.texture) return;
+    SetFrameRect(g_SrcRect, tex, frameIndex);
+    DrawScaledCharacterSprite(
+        sprite,
+        tex.texture,
+        &g_SrcRect,
+        feetPos,
+        facingDirection,
+        AGI_EFFECT_SCALE * PERSONA_EFFECT_SCALE,
+        color,
+        (float)kCellSize,
+        YOSUKE_STANCE_FEET_Y);
 }
 
 bool LoadSheet(YosukeTexture& tex, const char* path, int frameCount) {
@@ -504,18 +550,25 @@ void Yosuke::TickSpaceChordBuffer(bool isJumpPressed, int steps) {
 }
 
 bool Yosuke::IsHoldingAwayInput() const {
-    const int away = GetGuardAwayDirection(*this);
-    if (away < 0) {
-        return IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
-    }
-    return IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
+    return IsHoldingBackInput(*this);
 }
 
 void Yosuke::UpdateLiveSkillTargets(Fighter& enemy) {
-    if (currentState == YOSUKE_FLYING_KUNAI || currentState == YOSUKE_PERSONA_JIRAIYA) {
+    if (currentState == YOSUKE_FLYING_KUNAI ||
+        currentState == YOSUKE_PERSONA_JIRAIYA ||
+        currentState == YOSUKE_BRAVE_BLADE) {
         effectPos = GetSkillEffectPos(enemy);
     }
-    if (currentState == YOSUKE_MIRAGE_SLASH) {
+    if (currentState == YOSUKE_PERSONA_JIRAIYA) {
+        jiraiyaPos = GetJiraiyaAtEnemyFrontPos(enemy, facingDirection);
+    }
+    else if (currentState == YOSUKE_BRAVE_BLADE) {
+        jiraiyaPos = GetJiraiyaAtEnemyPos(enemy);
+    }
+    else if (currentState == YOSUKE_GARUDYNE) {
+        jiraiyaPos = GetJiraiyaBehindYosukePos(position, facingDirection);
+    }
+    else if (currentState == YOSUKE_MIRAGE_SLASH) {
         jiraiyaPos = GetMirageSlashJiraiyaPos(enemy, facingDirection);
     }
 }
@@ -551,15 +604,20 @@ void Yosuke::CompleteToStance() {
 }
 
 void Yosuke::BeginPersonaSummon() {
+    g_SoundManager.PlayPersonaSummonSfx();
     showJiraiya = false;
     showEffect = false;
     jiraiyaFrame = 0;
     effectFrame = 0;
     skillHit = false;
+    if (Fighter* foe = GetOpponent(*this)) {
+        PullEnemyForUltimate(*this, *foe, true);
+    }
     EnterState(YOSUKE_PERSONA_SUMMON);
 }
 
 void Yosuke::BeginGarudyne() {
+    g_SoundManager.PlayPersonaSummonSfx();
     EnterState(YOSUKE_GARUDYNE);
     skillHit = false;
     skillEndHold = 0;
@@ -568,10 +626,7 @@ void Yosuke::BeginGarudyne() {
     jiraiyaFrame = 0;
     effectFrame = 0;
     personaAnimAccumulator = 0;
-    jiraiyaPos = D3DXVECTOR3(
-        position.x - (float)facingDirection * kJiraiyaBehindX,
-        position.y - kJiraiyaBehindY,
-        0.0f);
+    jiraiyaPos = GetJiraiyaBehindYosukePos(position, facingDirection);
     if (Fighter* foe = GetOpponent(*this)) {
         PullEnemyForUltimate(*this, *foe, true);
     }
@@ -653,8 +708,31 @@ void Yosuke::FinishRecover() {
     UpdateScaledHurtbox();
 }
 
+bool YosukeMeleeBoxesOverlap(const Fighter& attacker, const Fighter& defender, const AABB& attackBox) {
+    const AABB foeHurt = defender.GetHurtbox();
+    if (CollisionHelper::AABBIntersect(attackBox, foeHurt)) {
+        return true;
+    }
+
+    AABB reach = attacker.GetBodyCollisionBox();
+    const float extra = 40.0f * GetMakotoDrawScale();
+    if (attacker.GetFacingDirection() > 0) {
+        reach.width += extra;
+    }
+    else {
+        reach.x -= extra;
+        reach.width += extra;
+    }
+    return CollisionHelper::AABBIntersect(reach, foeHurt);
+}
+
+bool YosukeIsCloseForSkillHit(const Fighter& attacker, const Fighter& defender) {
+    const float dx = fabsf(defender.GetHurtbox().x + defender.GetHurtbox().width * 0.5f - attacker.position.x);
+    return dx <= kYosukeSkillProximityX * GetMakotoDrawScale();
+}
+
 void Yosuke::CheckAttackCollision(Fighter& enemy) {
-    if (enemy.isDead) return;
+    if (!enemy.CanReceiveHit()) return;
 
     const float scale = GetCharacterRenderScale();
     AttackData* data = nullptr;
@@ -694,8 +772,8 @@ void Yosuke::CheckAttackCollision(Fighter& enemy) {
             }
             const float dashY = position.y - DASH_HITBOX_UP * scale;
             const AABB dashBox = { dashX, dashY, dashW, dashH };
-            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox())) {
-                enemy.TakeDamage(DASH_HIT_DAMAGE);
+            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox()) && enemy.CanReceiveHit()) {
+                DealMeleeHit(*this, enemy, DASH_HIT_DAMAGE);
                 dashHasHit = true;
                 RestoreSp(SP_GAIN_ON_HIT);
             }
@@ -707,8 +785,12 @@ void Yosuke::CheckAttackCollision(Fighter& enemy) {
     if (currentFrame == 0) hitThisAttack = false;
 
     const int totalFrames = GetMaxFrameForState(currentState);
-    const int startF = (data->startFrame > 0) ? data->startFrame : max(1, totalFrames / 4);
-    const int endF = min(totalFrames - 1, data->endFrame);
+    int startF = (data->startFrame > 0) ? data->startFrame : max(1, totalFrames / 4);
+    int endF = min(totalFrames - 1, data->endFrame);
+    if (currentState == YOSUKE_ATTACK) {
+        startF = 1;
+        endF = min(totalFrames - 1, max(endF, 12));
+    }
 
     if (currentFrame >= startF && currentFrame <= endF) {
         float attackX = 0.0f;
@@ -716,11 +798,19 @@ void Yosuke::CheckAttackCollision(Fighter& enemy) {
         float boxW = 0.0f;
         float boxH = 0.0f;
         BuildAttackBox(position, facingDirection, scale, *data, attackX, attackY, boxW, boxH);
+        if (facingDirection > 0) {
+            boxW += kYosukeMeleeReachBonus;
+        }
+        else {
+            attackX -= kYosukeMeleeReachBonus;
+            boxW += kYosukeMeleeReachBonus;
+        }
 
         const AABB attackBox = { attackX, attackY, boxW, boxH };
-        if (!hitThisAttack && CollisionHelper::AABBIntersect(attackBox, enemy.GetHurtbox())) {
+        if (!hitThisAttack && enemy.CanReceiveHit() &&
+            YosukeMeleeBoxesOverlap(*this, enemy, attackBox)) {
             const int dmg = (specialDamage > 0) ? specialDamage : data->damage;
-            enemy.TakeDamage(dmg);
+            DealMeleeHit(*this, enemy, dmg);
             hitThisAttack = true;
             RestoreSp(SP_GAIN_ON_HIT);
         }
@@ -735,10 +825,20 @@ void Yosuke::UpdateGarudyne(int steps, Fighter& enemy) {
     maxFrame = bodyTex.maxFrame;
     if (maxFrame < 1) maxFrame = 1;
 
-    jiraiyaPos = D3DXVECTOR3(
-        position.x - (float)facingDirection * kJiraiyaBehindX,
-        position.y - kJiraiyaBehindY,
-        0.0f);
+    // Slide horizontally toward the foe — stay on the ground (no climbing onto their head).
+    const float targetX = GetEnemyHurtboxCenter(enemy).x;
+    const float dx = targetX - position.x;
+    if (fabsf(dx) > kGarudyneArriveRadius) {
+        const float move = kGarudyneSpinSpeed * (float)steps;
+        const float step = (move >= fabsf(dx)) ? fabsf(dx) : move;
+        position.x += (dx > 0.0f) ? step : -step;
+    }
+    position.y = CHARACTER_GROUND_Y;
+    verticalVelocity = 0.0f;
+
+    jiraiyaPos = GetJiraiyaBehindYosukePos(position, facingDirection);
+    UpdateScaledHurtbox();
+    ClampFighterAgainstOpponent(*this, enemy);
 
     bool bodyDone = false;
     if (currentFrame < maxFrame - 1) {
@@ -763,9 +863,14 @@ void Yosuke::UpdateGarudyne(int steps, Fighter& enemy) {
     if (!skillHit) {
         const bool hitReady = jiraiyaFrame >= kSkillHitStartFrame ||
             currentFrame >= max(1, maxFrame / 4);
-        if (hitReady && !enemy.isDead) {
-            enemy.ApplySkillDamage(kGarudyneDamage);
-            skillHit = true;
+        if (hitReady && enemy.CanReceiveHit()) {
+            const AABB bodyBox = GetBodyCollisionBox();
+            const AABB enemyBox = enemy.GetHurtbox();
+            if (CollisionHelper::AABBIntersect(bodyBox, enemyBox) ||
+                YosukeIsCloseForSkillHit(*this, enemy)) {
+                DealSkillHit(*this, enemy, kGarudyneDamage);
+                skillHit = true;
+            }
         }
     }
 
@@ -869,20 +974,17 @@ void Yosuke::UpdateHuman(int steps) {
     }
 
     bool isRunning = IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT);
-    bool isMoving = false;
-    float moveDirX = 0.0f;
+    const HorizontalMoveInput move = ReadHorizontalMoveInput();
+    bool isMoving = move.isMoving;
+    float moveDirX = move.moveDirX;
 
     const bool opponentOnRight = opponent->GetPosition().x >= position.x;
 
-    if (IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A)) {
+    if (move.leftHeld && !move.rightHeld) {
         facingDirection = -1;
-        moveDirX = -1.0f;
-        isMoving = true;
     }
-    if (IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D)) {
+    else if (move.rightHeld && !move.leftHeld) {
         facingDirection = 1;
-        moveDirX = 1.0f;
-        isMoving = true;
     }
 
     if (!isMoving) {
@@ -897,7 +999,9 @@ void Yosuke::UpdateHuman(int steps) {
     else {
         RegenStamina(animSteps);
     }
-    int currentVelocity = isRunning ? (velocity * 2) : velocity;
+    const float currentVelocity = ComputeSmoothedLocomotionSpeed(
+        velocity, isRunning && isMoving, runBlend, steps);
+    const bool useRunAnim = ShouldUseRunLocomotion(runBlend);
 
     if (AllowsMovement(currentState) && isMoving &&
         currentState != YOSUKE_DASH && currentState != YOSUKE_BACK_DASH) {
@@ -925,7 +1029,9 @@ void Yosuke::UpdateHuman(int steps) {
             effectFrame = 0;
             skillHit = false;
             if (Fighter* foe = GetOpponent(*this)) {
+                PullEnemyForUltimate(*this, *foe, true);
                 effectPos = GetSkillEffectPos(*foe);
+                jiraiyaPos = GetJiraiyaAtEnemyFrontPos(*foe, facingDirection);
             }
             currentState = YOSUKE_PERSONA_JIRAIYA;
             currentFrame = (maxFrame > 0) ? (maxFrame - 1) : 0;
@@ -940,6 +1046,7 @@ void Yosuke::UpdateHuman(int steps) {
     if (currentState == YOSUKE_PERSONA_JIRAIYA) {
         maxFrame = g_JiraiyaAttack.maxFrame;
         if (maxFrame < 1) maxFrame = 1;
+        PullEnemyForUltimate(*this, *opponent, !skillHit && !opponent->IsHit());
         UpdateLiveSkillTargets(*opponent);
 
         personaAnimAccumulator += animSteps;
@@ -959,8 +1066,8 @@ void Yosuke::UpdateHuman(int steps) {
             effectFrame >= g_JiraiyaAttackEffect.maxFrame - 1;
 
         if (!skillHit && (jiraiyaFrame >= kSkillHitStartFrame || effectFrame >= kSkillHitStartFrame)) {
-            if (!opponent->isDead) {
-                opponent->ApplySkillDamage(kPersonaStrikeDamage);
+            if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
+                DealSkillHit(*this, *opponent, kPersonaStrikeDamage);
                 skillHit = true;
             }
         }
@@ -990,8 +1097,8 @@ void Yosuke::UpdateHuman(int steps) {
             CompleteToStance();
         }
         else if (!skillHit && effectFrame >= kSkillHitStartFrame) {
-            if (!opponent->isDead) {
-                opponent->ApplySkillDamage(kFlyingKunaiDamage);
+            if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
+                DealSkillHit(*this, *opponent, kFlyingKunaiDamage);
                 skillHit = true;
             }
         }
@@ -999,32 +1106,51 @@ void Yosuke::UpdateHuman(int steps) {
         return;
     }
 
-    if (currentState == YOSUKE_MIRAGE_SLASH || currentState == YOSUKE_BRAVE_BLADE) {
+    if (currentState == YOSUKE_MIRAGE_SLASH) {
         showJiraiya = true;
         maxFrame = GetMaxFrameForState(currentState);
-        const int skillDamage = (currentState == YOSUKE_MIRAGE_SLASH)
-            ? kMirageSlashDamage
-            : kBraveBladeDamage;
+        PullEnemyForUltimate(*this, *opponent, !skillHit && !opponent->IsHit());
+        UpdateLiveSkillTargets(*opponent);
 
-        if (currentState == YOSUKE_MIRAGE_SLASH) {
-            PullEnemyForUltimate(*this, *opponent, true);
-            UpdateLiveSkillTargets(*opponent);
-        }
-
-        const int skillTicks = (currentState == YOSUKE_MIRAGE_SLASH)
-            ? kSummonTicks
-            : kActionTicks;
-        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, skillTicks, maxFrame)) {
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kSummonTicks, maxFrame)) {
             CompleteToStance();
         }
         else {
             jiraiyaFrame = currentFrame;
-            if (jiraiyaFrame >= g_JiraiyaMirageSlash.maxFrame && currentState == YOSUKE_MIRAGE_SLASH) {
+            if (jiraiyaFrame >= g_JiraiyaMirageSlash.maxFrame) {
                 jiraiyaFrame = g_JiraiyaMirageSlash.maxFrame - 1;
             }
             if (!skillHit && currentFrame >= kSkillHitStartFrame) {
-                if (!opponent->isDead) {
-                    opponent->ApplySkillDamage(skillDamage);
+                if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
+                    DealSkillHit(*this, *opponent, kMirageSlashDamage);
+                    skillHit = true;
+                }
+            }
+        }
+        UpdateScaledHurtbox();
+        return;
+    }
+
+    if (currentState == YOSUKE_BRAVE_BLADE) {
+        showJiraiya = true;
+        maxFrame = GetMaxFrameForState(currentState);
+        PullEnemyForUltimate(*this, *opponent, !skillHit && !opponent->IsHit());
+        UpdateLiveSkillTargets(*opponent);
+
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kActionTicks, maxFrame)) {
+            CompleteToStance();
+        }
+        else {
+            personaAnimAccumulator += animSteps;
+            while (personaAnimAccumulator >= kPersonaEffectTicks) {
+                personaAnimAccumulator -= kPersonaEffectTicks;
+                if (jiraiyaFrame < g_JiraiyaBraveBlade.maxFrame - 1) {
+                    jiraiyaFrame++;
+                }
+            }
+            if (!skillHit && (jiraiyaFrame >= kSkillHitStartFrame || currentFrame >= kSkillHitStartFrame)) {
+                if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
+                    DealSkillHit(*this, *opponent, kBraveBladeDamage);
                     skillHit = true;
                 }
             }
@@ -1044,8 +1170,7 @@ void Yosuke::UpdateHuman(int steps) {
             IsGameKeyDown(DIK_1) ||
             IsGameKeyDown(DIK_2) ||
             IsGameKeyDown(DIK_3) ||
-            IsGameKeyDown(DIK_4) ||
-            IsGameKeyDown(DIK_5);
+            IsGameKeyDown(DIK_4);
         if (checkInput) {
             CompleteToStance();
             UpdateScaledHurtbox();
@@ -1165,9 +1290,8 @@ void Yosuke::UpdateHuman(int steps) {
     }
 
     if (currentState == YOSUKE_CRESCENT_SLASH) {
-        currentFrame = 0;
-        animAccumulator += animSteps;
-        if (animAccumulator >= kCrescentSlashTicks) {
+        maxFrame = GetMaxFrameForState(YOSUKE_CRESCENT_SLASH);
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kCrescentSlashTicks, maxFrame)) {
             CompleteToStance();
         }
         CheckAttackCollision(*opponent);
@@ -1236,7 +1360,6 @@ void Yosuke::UpdateHuman(int steps) {
     const bool isKey2 = IsGameKeyDown(DIK_2);
     const bool isKey3 = IsGameKeyDown(DIK_3);
     const bool isKey4 = IsGameKeyDown(DIK_4);
-    const bool isKey5 = IsGameKeyDown(DIK_5);
 
     TickSpaceChordBuffer(isJumpPressed, steps);
     const bool canUseSpaceChord = CanUseSpaceChord() || isJumpPressed;
@@ -1244,7 +1367,7 @@ void Yosuke::UpdateHuman(int steps) {
 
     const bool hasAnyInput = isMoving || isJumpPressed || isDashHeld || attackDownNow ||
         isBackDashPressed || isGuardPressed || isMoonsaultPressed || isCrescentDownNow ||
-        isKey1 || isKey2 || isKey3 || isKey4 || isKey5;
+        isKey1 || isKey2 || isKey3 || isKey4;
 
     if (hasAnyInput) noInputFrames = 0;
     else if (currentState == YOSUKE_STANCE) noInputFrames += steps;
@@ -1261,7 +1384,8 @@ void Yosuke::UpdateHuman(int steps) {
         UpdateScaledHurtbox();
         return;
     }
-    if ((isKey2 || isKey5) && TryConsumeSp(kSpCostMirage)) {
+    if (isKey2 && TryConsumeSp(kSpCostMirage)) {
+        g_SoundManager.PlayPersonaSummonSfx();
         showJiraiya = true;
         jiraiyaFrame = 0;
         personaAnimAccumulator = 0;
@@ -1273,10 +1397,16 @@ void Yosuke::UpdateHuman(int steps) {
         return;
     }
     if (isKey3 && TryConsumeSp(kSpCostBraveBlade)) {
+        g_SoundManager.PlayPersonaSummonSfx();
         showJiraiya = true;
         jiraiyaFrame = 0;
         personaAnimAccumulator = 0;
         skillHit = false;
+        PullEnemyForUltimate(*this, *opponent, true);
+        if (opponent) {
+            jiraiyaPos = GetJiraiyaAtEnemyPos(*opponent);
+            effectPos = GetSkillEffectPos(*opponent);
+        }
         EnterState(YOSUKE_BRAVE_BLADE);
         UpdateScaledHurtbox();
         return;
@@ -1319,11 +1449,11 @@ void Yosuke::UpdateHuman(int steps) {
         nextState = YOSUKE_ATTACK;
         showJiraiya = false;
     }
-    else if (isMoving) {
-        nextState = isRunning ? YOSUKE_RUN : YOSUKE_WALK;
-    }
     else if (isGuardPressed) {
         nextState = IsOnGround() ? YOSUKE_GUARD : YOSUKE_GUARD_AIR;
+    }
+    else if (isMoving) {
+        nextState = useRunAnim ? YOSUKE_RUN : YOSUKE_WALK;
     }
     else if (noInputFrames >= IDLE_THRESHOLD_FRAMES) {
         nextState = YOSUKE_IDLE;
@@ -1364,6 +1494,11 @@ void Yosuke::UpdateHuman(int steps) {
     UpdateScaledHurtbox();
 }
 
+void Yosuke::SyncHeldInputState() {
+    attackButtonHeld = IsGameMouseDown(VK_LBUTTON);
+    crescentButtonHeld = IsGameKeyDown(DIK_R);
+}
+
 void Yosuke::Update() {
     if (IsPlayingResultPose()) {
         maxFrame = GetMaxFrameForState(currentState);
@@ -1381,37 +1516,41 @@ void Yosuke::Update() {
             currentFrame = maxFrame - 1;
         }
         else if (currentState == YOSUKE_WIN) {
+            if (resultPoseHoldFrame < 0) {
+                if (g_Win.texture) {
+                    resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                        g_Win.texture,
+                        kCellSize,
+                        kCellSize,
+                        g_Win.cols,
+                        maxFrame);
+                }
+                else {
+                    resultPoseHoldFrame = maxFrame - 1;
+                }
+            }
+
+            const int winEndFrame = resultPoseHoldFrame;
+            const int winAnimFrames = winEndFrame + 1;
             if (!resultPoseAnimLocked) {
-                if (currentFrame < maxFrame - 1) {
+                if (currentFrame < winEndFrame) {
                     if (AdvanceOneShotFrame(
                         animAccumulator,
                         currentFrame,
                         steps,
                         BATTLE_WIN_ANIM_TICKS,
-                        maxFrame)) {
+                        winAnimFrames)) {
+                        currentFrame = winEndFrame;
                         resultPoseAnimLocked = true;
                     }
                 }
                 else {
+                    currentFrame = winEndFrame;
                     resultPoseAnimLocked = true;
                 }
             }
-
-            if (resultPoseAnimLocked) {
-                if (resultPoseHoldFrame < 0) {
-                    if (g_Win.texture) {
-                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
-                            g_Win.texture,
-                            kCellSize,
-                            kCellSize,
-                            g_Win.cols,
-                            maxFrame);
-                    }
-                    else {
-                        resultPoseHoldFrame = maxFrame - 1;
-                    }
-                }
-                currentFrame = resultPoseHoldFrame;
+            else {
+                currentFrame = winEndFrame;
             }
         }
 
@@ -1467,8 +1606,7 @@ void Yosuke::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
     }
 
     if (showEffect && currentState == YOSUKE_PERSONA_JIRAIYA && g_JiraiyaAttackEffect.texture) {
-        DrawCenteredLayer(sprite, g_JiraiyaAttackEffect, effectFrame, effectPos,
-            PERSONA_EFFECT_SCALE, color);
+        DrawSkillEffectLayer(sprite, g_JiraiyaAttackEffect, effectFrame, effectPos, facingDirection, color);
     }
 }
 
@@ -1494,8 +1632,24 @@ void Yosuke::Render(LPD3DXSPRITE sprite) {
     const YosukeTexture* jiraiyaTex = GetJiraiyaTextureForState(currentState);
     if (showJiraiya && jiraiyaTex && jiraiyaTex->texture && jiraiyaTex->maxFrame > 0) {
         D3DXVECTOR3 pos;
-        if (currentState == YOSUKE_GARUDYNE) {
-            pos = jiraiyaPos;
+        if (currentState == YOSUKE_PERSONA_JIRAIYA) {
+            if (Fighter* opponent = GetOpponent(*this)) {
+                pos = GetJiraiyaAtEnemyFrontPos(*opponent, facingDirection);
+            }
+            else {
+                pos = jiraiyaPos;
+            }
+        }
+        else if (currentState == YOSUKE_BRAVE_BLADE) {
+            if (Fighter* opponent = GetOpponent(*this)) {
+                pos = GetJiraiyaAtEnemyPos(*opponent);
+            }
+            else {
+                pos = jiraiyaPos;
+            }
+        }
+        else if (currentState == YOSUKE_GARUDYNE) {
+            pos = GetJiraiyaBehindYosukePos(position, facingDirection);
         }
         else if (currentState == YOSUKE_MIRAGE_SLASH) {
             if (Fighter* opponent = GetOpponent(*this)) {
@@ -1528,7 +1682,9 @@ void Yosuke::Render(LPD3DXSPRITE sprite) {
             position.x - (float)facingDirection * kJiraiyaBehindX,
             position.y - kJiraiyaBehindY,
             0.0f);
-        int winFrame = currentFrame;
+        int winFrame = (resultPoseAnimLocked && resultPoseHoldFrame >= 0)
+            ? resultPoseHoldFrame
+            : currentFrame;
         if (winFrame >= g_JiraiyaWin.maxFrame) {
             winFrame = g_JiraiyaWin.maxFrame - 1;
         }
@@ -1559,6 +1715,12 @@ void Yosuke::RenderDebugHitbox(LPD3DXSPRITE sprite) {
     DrawDebugRect(sprite, bodyBox.x, bodyBox.y, bodyBox.width, bodyBox.height, D3DCOLOR_ARGB(160, 255, 64, 255));
     DrawDebugRect(sprite, hurtbox.x, hurtbox.y, hurtbox.width, hurtbox.height, D3DCOLOR_ARGB(160, 80, 200, 120));
 
+    if (currentState == YOSUKE_GARUDYNE) {
+        DrawDebugRect(sprite, bodyBox.x, bodyBox.y, bodyBox.width, bodyBox.height,
+            D3DCOLOR_ARGB(140, 255, 180, 64));
+        return;
+    }
+
     if (!IsMeleeState(currentState)) return;
 
     Fighter* opponent = GetOpponent(*this);
@@ -1579,6 +1741,13 @@ void Yosuke::RenderDebugHitbox(LPD3DXSPRITE sprite) {
     float boxW = 0.0f;
     float boxH = 0.0f;
     BuildAttackBox(position, facingDirection, GetCharacterRenderScale(), *data, attackX, attackY, boxW, boxH);
+    if (facingDirection > 0) {
+        boxW += kYosukeMeleeReachBonus;
+    }
+    else {
+        attackX -= kYosukeMeleeReachBonus;
+        boxW += kYosukeMeleeReachBonus;
+    }
     DrawDebugRect(sprite, attackX, attackY, boxW, boxH, D3DCOLOR_ARGB(140, 255, 64, 64));
 }
 
@@ -1591,6 +1760,7 @@ void Yosuke::TakeDamage(int damage) {
             health -= appliedDamage;
             if (health < 0) health = 0;
         }
+        NotifyFighterDamageApplied(*this, appliedDamage);
         UpdateScaledHurtbox();
         return;
     }
@@ -1601,9 +1771,10 @@ void Yosuke::TakeDamage(int damage) {
         if (currentState != YOSUKE_DAMAGE && currentState != YOSUKE_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && health <= 0) {
+        if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
             isDead = true;
         }
+        NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
 
@@ -1618,9 +1789,11 @@ void Yosuke::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 bool Yosuke::IsInGuardState() const {
@@ -1637,7 +1810,8 @@ void Yosuke::HoldGuardState(bool airborne) {
 
 void Yosuke::ApplySkillDamage(int damage) {
     if (isDead) return;
-    health -= damage;
+    const int appliedDamage = damage;
+    health -= appliedDamage;
     if (health < 0) health = 0;
 
     if (currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER) {
@@ -1648,9 +1822,11 @@ void Yosuke::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 void Yosuke::BeginVictoryPose() {
@@ -1665,6 +1841,14 @@ void Yosuke::BeginVictoryPose() {
     animAccumulator = 0;
     maxFrame = GetMaxFrameForState(YOSUKE_WIN);
     if (maxFrame < 1) maxFrame = 1;
+    resultPoseHoldFrame = g_Win.texture
+        ? FindLastVisibleSheetFrame(
+            g_Win.texture,
+            kCellSize,
+            kCellSize,
+            g_Win.cols,
+            maxFrame)
+        : maxFrame - 1;
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateScaledHurtbox();
@@ -1693,6 +1877,10 @@ void Yosuke::BeginDefeatPose() {
 
 bool Yosuke::IsPlayingResultPose() const {
     return currentState == YOSUKE_WIN || currentState == YOSUKE_LOSE;
+}
+
+bool Yosuke::IsInKnockdownReaction() const {
+    return isHit || currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER;
 }
 
 bool Yosuke::IsInCombatAction() const {

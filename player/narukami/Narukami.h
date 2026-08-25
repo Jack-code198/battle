@@ -87,12 +87,14 @@ private:
     void BeginRecover();
     void FinishRecover();
     void BeginSummon(int state);
+    void CommitCpuAttackAction();
 
 public:
     Narukami();
     ~Narukami() override = default;
 
     void Update() override;
+    void SyncHeldInputState() override;
     void Render(LPD3DXSPRITE sprite) override;
     void RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
@@ -102,6 +104,7 @@ public:
     void BeginVictoryPose() override;
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
+    bool IsInKnockdownReaction() const override;
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;
@@ -113,6 +116,7 @@ public:
     void UpdateScaledHurtbox() override;
 
     int GetCurrentState() const { return currentState; }
+    int GetActionState() const override { return currentState; }
 };
 
 bool LoadNarukamiTextures();

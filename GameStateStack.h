@@ -4,9 +4,12 @@
 // High-level screens pushed/popped like a stack (game over retry / back).
 enum class AppScreen {
     MainMenu,
+    Options,
     PlayerSelect,
     StageSelect,
     Battle,
+    Pause,
+    MoveList,
     GameOver
 };
 
@@ -47,6 +50,11 @@ public:
 
     // After round fade-out: pop Battle / StageSelect / GameOver, land on PlayerSelect.
     void ReturnToPlayerSelectAfterBattle() {
+        ReturnToPlayerSelect();
+    }
+
+    // Pause / game-over shortcut: drop back to character select (keep MainMenu underneath).
+    void ReturnToPlayerSelect() {
         while (!Empty()) {
             const AppScreen top = Current();
             if (top == AppScreen::PlayerSelect) {

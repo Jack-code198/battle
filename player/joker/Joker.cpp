@@ -105,6 +105,20 @@ static bool IsAirAttackState(int state) {
     }
 }
 
+static bool IsAirborneHumanState(int state) {
+    return state == JOKER_JUMP ||
+        state == JOKER_GUARD_AIR ||
+        IsAirAttackState(state);
+}
+
+static bool JokerIsHoldingAwayFromOpponent(const Joker& joker) {
+    const int away = GetGuardAwayDirection(joker);
+    if (away < 0) {
+        return IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
+    }
+    return IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
+}
+
 static bool IsSkillState(int state) {
     switch (state) {
     case JOKER_EIHA:
@@ -234,6 +248,8 @@ Joker::Joker()
     , hitThisAttack(false), attackButtonHeld(false), dodgeForward(true)
     , skillHit(false), skillEffectFrame(0), skillEffectAccum(0)
     , skillEffectPos(0.0f, 0.0f, 0.0f)
+    , pendingSkillState(0), personaAnimAccumulator(0), arseneSkillFrame(0)
+    , showArseneSkill(false), winRunoffActive(false)
 {
     SetCharacterId(Char_Joker);
     ApplySlotSpawnDefaults();
@@ -294,7 +310,9 @@ void Joker::ClampPosition() {
         return;
     }
 
-    ClampJokerCenterX(position.x);
+    if (!winRunoffActive) {
+        ClampJokerCenterX(position.x);
+    }
 
     if (position.y > CHARACTER_GROUND_Y + JOKER_MAX_GROUND_SLACK) {
         position.y = CHARACTER_GROUND_Y + JOKER_MAX_GROUND_SLACK;
@@ -308,6 +326,10 @@ void Joker::EnterStance() {
     isHit = false;
     isStunned = false;
     isDamageAnimating = false;
+    pendingSkillState = 0;
+    showArseneSkill = false;
+    arseneSkillFrame = 0;
+    personaAnimAccumulator = 0;
     currentState = JOKER_STAND;
     currentFrame = 0;
     frameCounter = 0;
@@ -346,13 +368,102 @@ void Joker::EnterActionState(int state) {
     maxFrame = GetMaxFrameForState(state);
 }
 
-void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
-    if (!IsSkillState(currentState) || enemy.isDead) return;
+void Joker::BeginPersonaSummonIntro(int pendingSkill) {
+    pendingSkillState = pendingSkill;
+    skillHit = false;
+    skillEndHold = 0;
+    showArseneSkill = false;
+    arseneSkillFrame = 0;
+    personaAnimAccumulator = 0;
+    EnterActionState(JOKER_PERSONA_SUMMON);
 
-    // All-out / persona skills yank the foe in for the cinematic hit.
-    if (IsAllOutPhase(currentState) ||
-        currentState == JOKER_EIHA ||
-        currentState == JOKER_EIGAON) {
+    if (!g_JokerAnims[JOKER_ANIM_PERSONA_SUMMON].joker.texture) {
+        pendingSkillState = 0;
+        if (pendingSkill == JOKER_EIHA || pendingSkill == JOKER_EIGAON) {
+            BeginEihaEigaonSkill(pendingSkill);
+        }
+    }
+}
+
+void Joker::BeginEihaEigaonSkill(int state) {
+    EnterActionState(state);
+    showArseneSkill = true;
+    arseneSkillFrame = 0;
+    skillEffectFrame = 0;
+    skillHit = false;
+    skillEndHold = 0;
+    personaAnimAccumulator = 0;
+    if (Fighter* foe = GetOpponent(*this)) {
+        PullEnemyForUltimate(*this, *foe, true);
+    }
+}
+
+void Joker::UpdateEihaEigaonSkill(Fighter& enemy, int steps) {
+    const JokerAnimId animId = GetAnimForState(currentState);
+    const JokerTextureSet& set = g_JokerAnims[animId];
+
+    PullEnemyForUltimate(*this, enemy, !skillHit && !enemy.IsHit());
+
+    maxFrame = set.joker.maxFrame;
+    if (maxFrame < 1) maxFrame = 1;
+
+    const AABB& hb = enemy.GetHurtbox();
+    skillEffectPos = D3DXVECTOR3(hb.x + hb.width * 0.5f, hb.y + hb.height * 0.5f, 0.0f);
+
+    bool bodyDone = false;
+    if (currentFrame < maxFrame - 1) {
+        bodyDone = AdvanceOneShotFrame(animAccumulator, currentFrame, steps, JOKER_SKILL_TICKS, maxFrame);
+    }
+    else {
+        bodyDone = true;
+        currentFrame = maxFrame - 1;
+    }
+
+    const int arseneMax = set.arsene.maxFrame;
+    const int effectMax = set.jokerEffect.maxFrame;
+    const int personaTicks = PERSONA_ANIM_DELAY;
+
+    personaAnimAccumulator += steps;
+    while (personaAnimAccumulator >= personaTicks) {
+        personaAnimAccumulator -= personaTicks;
+        if (showArseneSkill && arseneMax > 0 && arseneSkillFrame < arseneMax - 1) {
+            arseneSkillFrame++;
+        }
+        if (effectMax > 0 && skillEffectFrame < effectMax - 1) {
+            skillEffectFrame++;
+            skillEndHold = 0;
+        }
+        else if (effectMax > 0) {
+            skillEndHold += personaTicks;
+        }
+    }
+
+    const bool arseneDone = !showArseneSkill || arseneMax < 1 ||
+        arseneSkillFrame >= arseneMax - 1;
+    const bool effectDone = effectMax < 1 ||
+        (skillEffectFrame >= effectMax - 1 && skillEndHold >= LASER_END_HOLD_FRAMES);
+
+    if (!skillHit) {
+        const int hitStart = GetSkillHitStartFrame(currentState);
+        const bool hitReady = skillEffectFrame >= hitStart ||
+            arseneSkillFrame >= hitStart ||
+            currentFrame >= hitStart;
+        if (hitReady && enemy.CanReceiveHit()) {
+            DealSkillHit(*this, enemy, GetSkillDamageForState(currentState));
+            skillHit = true;
+        }
+    }
+
+    if (bodyDone && arseneDone && effectDone) {
+        skillHit = false;
+        EnterStance();
+    }
+}
+
+void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
+    if (!IsSkillState(currentState) || !enemy.CanReceiveHit()) return;
+
+    if (IsAllOutPhase(currentState)) {
         PullEnemyForUltimate(*this, enemy, !skillHit && !enemy.IsHit());
     }
 
@@ -368,7 +479,7 @@ void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
     if (effectMax < 1) return;
 
     const int effectTicks =
-        (currentState == JOKER_EIHA || currentState == JOKER_EIGAON)
+        (currentState == JOKER_NEUTRAL_SPECIAL || currentState == JOKER_NEUTRAL_AIR_SPECIAL)
         ? LASER_EFFECT_ANIM_DELAY
         : PERSONA_EFFECT_ANIM_DELAY;
 
@@ -387,8 +498,8 @@ void Joker::UpdateSkillHits(Fighter& enemy, int steps) {
     if (!skillHit) {
         const int hitStart = GetSkillHitStartFrame(currentState);
         const bool effectReady = skillEffectFrame >= hitStart || currentFrame >= hitStart;
-        if (effectReady) {
-            enemy.ApplySkillDamage(GetSkillDamageForState(currentState));
+        if (effectReady && enemy.CanReceiveHit()) {
+            DealSkillHit(*this, enemy, GetSkillDamageForState(currentState));
             skillHit = true;
         }
     }
@@ -521,7 +632,7 @@ void Joker::ReturnToOriginalPosition() {
 }
 
 void Joker::CheckAttackCollision(Fighter& enemy) {
-    if (enemy.IsDead()) return;
+    if (!enemy.CanReceiveHit()) return;
     if (!IsMeleeAttackState(currentState)) return;
 
     if (currentFrame == 0) hitThisAttack = false;
@@ -571,7 +682,7 @@ void Joker::CheckAttackCollision(Fighter& enemy) {
     const AABB attackBox = { attackX, attackY, boxW, boxH };
 
     if (CollisionHelper::AABBIntersect(attackBox, enemy.GetHurtbox())) {
-        enemy.TakeDamage(data->damage);
+        DealMeleeHit(*this, enemy, data->damage);
         hitThisAttack = true;
         RestoreSp(SP_GAIN_ON_HIT);
     }
@@ -740,18 +851,19 @@ void Joker::UpdateHuman(int steps) {
 
     const bool shiftHeld = IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT);
     bool isRunning = shiftHeld;
-    bool isMoving = false;
-    float moveDirX = 0.0f;
+    const HorizontalMoveInput move = ReadHorizontalMoveInput();
+    bool isMoving = move.isMoving;
+    float moveDirX = move.moveDirX;
 
-    if (IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A)) {
-        facingDirection = -1;
-        moveDirX = -1.0f;
-        isMoving = true;
+    if (move.leftHeld && !move.rightHeld) {
+        if (!IsAirborneHumanState(currentState)) {
+            facingDirection = -1;
+        }
     }
-    if (IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D)) {
-        facingDirection = 1;
-        moveDirX = 1.0f;
-        isMoving = true;
+    else if (move.rightHeld && !move.leftHeld) {
+        if (!IsAirborneHumanState(currentState)) {
+            facingDirection = 1;
+        }
     }
 
     if (isRunning && isMoving) {
@@ -762,7 +874,9 @@ void Joker::UpdateHuman(int steps) {
     else {
         RegenStamina(animSteps);
     }
-    int currentVelocity = isRunning ? (velocity * 2) : velocity;
+    const float currentVelocity = ComputeSmoothedLocomotionSpeed(
+        velocity, isRunning && isMoving, runBlend, steps);
+    const bool useRunAnim = ShouldUseRunLocomotion(runBlend);
 
     const bool allowsMove =
         currentState == JOKER_STAND ||
@@ -908,24 +1022,14 @@ void Joker::UpdateHuman(int steps) {
         const bool isGuardPressed = IsHoldingGuardInput(*this);
 
         if (isLeftPressed) {
-            facingDirection = -1;
             jumpHorizontalSpeed = -currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER;
         }
         else if (isRightPressed) {
-            facingDirection = 1;
             jumpHorizontalSpeed = currentVelocity * FIGHTER_AIR_CONTROL_MULTIPLIER;
         }
 
-        if (isGuardPressed) {
-            EnterActionState(JOKER_GUARD_AIR);
-            UpdateHurtbox();
-            return;
-        }
         if (isEPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
-            // Back air when moving opposite to facing.
-            const bool movingBack =
-                (facingDirection == 1 && moveDirX < 0.0f) ||
-                (facingDirection == -1 && moveDirX > 0.0f);
+            const bool movingBack = JokerIsHoldingAwayFromOpponent(*this);
             EnterActionState(movingBack ? JOKER_BACK_AIR : JOKER_FORWARD_AIR);
             UpdateHurtbox();
             return;
@@ -945,6 +1049,7 @@ void Joker::UpdateHuman(int steps) {
             UpdateHurtbox();
             return;
         }
+        // Do not enter air guard while jumping — holding away sets up back-air E.
 
         TryApplyHorizontalDelta(jumpHorizontalSpeed * steps);
         ClampPosition();
@@ -967,6 +1072,31 @@ void Joker::UpdateHuman(int steps) {
         maxFrame = GetMaxFrameForState(currentState);
 
         if (currentState == JOKER_GUARD_AIR) {
+            const bool isEPressed = IsGameKeyDown(DIK_E);
+            const bool isRPressed = IsGameKeyDown(DIK_R);
+            const bool isSPressed = IsGameKeyDown(DIK_S);
+            if (isEPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+                const bool movingBack = JokerIsHoldingAwayFromOpponent(*this);
+                EnterActionState(movingBack ? JOKER_BACK_AIR : JOKER_FORWARD_AIR);
+                UpdateHurtbox();
+                return;
+            }
+            if (isRPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+                EnterActionState(JOKER_UP_AIR);
+                UpdateHurtbox();
+                return;
+            }
+            if (isSPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+                EnterActionState(JOKER_DOWN_AIR);
+                UpdateHurtbox();
+                return;
+            }
+            if (attackDownNow) {
+                EnterActionState(JOKER_NEUTRAL_AIR);
+                UpdateHurtbox();
+                return;
+            }
+
             AdvanceLoopFrame(animAccumulator, currentFrame, animSteps, MAKOTO_LOOP_TICKS_SLOW, maxFrame);
             if (!IsHoldingGuardInput(*this)) {
                 if (IsOnGround()) {
@@ -1007,6 +1137,28 @@ void Joker::UpdateHuman(int steps) {
         return;
     }
 
+    if (currentState == JOKER_PERSONA_SUMMON) {
+        maxFrame = GetMaxFrameForState(JOKER_PERSONA_SUMMON);
+        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, MAKOTO_SUMMON_TICKS, maxFrame)) {
+            const int followUp = pendingSkillState;
+            pendingSkillState = 0;
+            if (followUp == JOKER_EIHA || followUp == JOKER_EIGAON) {
+                BeginEihaEigaonSkill(followUp);
+            }
+            else {
+                EnterStance();
+            }
+        }
+        UpdateHurtbox();
+        return;
+    }
+
+    if (currentState == JOKER_EIHA || currentState == JOKER_EIGAON) {
+        UpdateEihaEigaonSkill(*opponent, animSteps);
+        UpdateHurtbox();
+        return;
+    }
+
     if (currentState == JOKER_ATTACK ||
         currentState == JOKER_FORWARD_ATTACK ||
         currentState == JOKER_UP_ATTACK ||
@@ -1016,11 +1168,7 @@ void Joker::UpdateHuman(int steps) {
         currentState == JOKER_DOWN_SMASH ||
         currentState == JOKER_NEUTRAL_SPECIAL ||
         currentState == JOKER_NEUTRAL_AIR_SPECIAL ||
-        currentState == JOKER_EIHA ||
-        currentState == JOKER_EIGAON ||
-        IsAllOutPhase(currentState) ||
-        currentState == JOKER_PERSONA_SUMMON ||
-        currentState == JOKER_PERSONA_RETURN) {
+        IsAllOutPhase(currentState)) {
         maxFrame = GetMaxFrameForState(currentState);
         int ticks = MAKOTO_ACTION_TICKS;
         if (currentState == JOKER_ALL_OUT_MEMBER) {
@@ -1043,7 +1191,7 @@ void Joker::UpdateHuman(int steps) {
             ticks = JOKER_ALL_OUT_TICKS;
             PullEnemyForUltimate(*this, *opponent, !skillHit && !opponent->IsHit());
         }
-        else if (IsSkillState(currentState) || currentState == JOKER_EIHA || currentState == JOKER_EIGAON) {
+        else if (IsSkillState(currentState)) {
             ticks = JOKER_SKILL_TICKS;
         }
         if (currentState == JOKER_NEUTRAL_AIR_SPECIAL) {
@@ -1096,7 +1244,7 @@ void Joker::UpdateHuman(int steps) {
             IsGameKeyDown(DIK_2) ||
             IsGameKeyDown(DIK_3) ||
             IsGameKeyDown(DIK_4) ||
-            IsGameKeyDown(DIK_5);
+            IsGameKeyDown(DIK_4);
         if (checkInput) {
             EnterStance();
             UpdateHurtbox();
@@ -1127,7 +1275,7 @@ void Joker::UpdateHuman(int steps) {
     const bool isEihaPressed = IsGameKeyDown(DIK_1);
     const bool isEigaonPressed = IsGameKeyDown(DIK_2);
     const bool isNeutralSpecialPressed = IsGameKeyDown(DIK_3);
-    const bool isAllOutPressed = IsGameKeyDown(DIK_5);
+    const bool isAllOutPressed = IsGameKeyDown(DIK_4);
 
     const bool hasAnyInput = isMoving || isJumpPressed || isDashPressed || attackDownNow ||
         isDodgePressed || isGuardPressed || isTauntPressed || isSideAtkPressed ||
@@ -1137,20 +1285,28 @@ void Joker::UpdateHuman(int steps) {
     if (hasAnyInput) idleWaitFrames = 0;
     else if (currentState == JOKER_STAND) idleWaitFrames += steps;
 
+    if (isEihaPressed && currentState != JOKER_PERSONA_SUMMON &&
+        currentState != JOKER_EIHA && currentState != JOKER_EIGAON &&
+        TryConsumeSp(SP_COST_SUMMON_1)) {
+        BeginPersonaSummonIntro(JOKER_EIHA);
+        UpdateHurtbox();
+        return;
+    }
+    if (isEigaonPressed && currentState != JOKER_PERSONA_SUMMON &&
+        currentState != JOKER_EIHA && currentState != JOKER_EIGAON &&
+        TryConsumeSp(SP_COST_SUMMON_2)) {
+        BeginPersonaSummonIntro(JOKER_EIGAON);
+        UpdateHurtbox();
+        return;
+    }
+
     int nextState = JOKER_STAND;
 
-    if (isEihaPressed) {
-        // Same flow as Eigaon: Joker eiha + Arsene eiha together (no persona! intro).
-        nextState = JOKER_EIHA;
-    }
-    else if (isEigaonPressed) {
-        nextState = JOKER_EIGAON;
-    }
-    else if (isNeutralSpecialPressed) {
+    if (isNeutralSpecialPressed) {
         nextState = IsOnGround() ? JOKER_NEUTRAL_SPECIAL : JOKER_NEUTRAL_AIR_SPECIAL;
     }
     else if (isAllOutPressed) {
-        // 5 → all-out_attack → member → effect(hit) → finish
+        // 4 → all-out_attack → member → effect(hit) → finish
         nextState = JOKER_ALL_OUT_ATTACK;
         skillEndHold = 0;
         if (Fighter* foe = GetOpponent(*this)) {
@@ -1189,20 +1345,20 @@ void Joker::UpdateHuman(int steps) {
     else if (isDownPressed && isAttackPressed) {
         nextState = JOKER_DOWN_ATTACK;
     }
-    else if (isSideAtkPressed) {
+    else if (isSideAtkPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = JOKER_FORWARD_ATTACK;
     }
-    else if (isAtkUpPressed) {
+    else if (isAtkUpPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = JOKER_UP_ATTACK;
     }
     else if (isAttackPressed) {
         nextState = JOKER_ATTACK;
     }
-    else if (isMoving) {
-        nextState = isRunning ? JOKER_RUN : JOKER_WALK;
+    else if (isGuardPressed && IsOnGround()) {
+        nextState = JOKER_GUARD;
     }
-    else if (isGuardPressed) {
-        nextState = IsOnGround() ? JOKER_GUARD : JOKER_GUARD_AIR;
+    else if (isMoving) {
+        nextState = useRunAnim ? JOKER_RUN : JOKER_WALK;
     }
     else if (idleWaitFrames >= IDLE_THRESHOLD_FRAMES) {
         nextState = JOKER_IDLE;
@@ -1254,6 +1410,10 @@ void Joker::UpdateHuman(int steps) {
     UpdateHurtbox();
 }
 
+void Joker::SyncHeldInputState() {
+    attackButtonHeld = IsGameMouseDown(VK_LBUTTON);
+}
+
 void Joker::Update() {
     if (IsPlayingResultPose()) {
         maxFrame = GetMaxFrameForState(currentState);
@@ -1264,38 +1424,59 @@ void Joker::Update() {
         if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
         if (currentState == JOKER_WIN) {
-            if (!resultPoseAnimLocked) {
-                if (currentFrame < maxFrame - 1) {
-                    if (AdvanceOneShotFrame(
-                        animAccumulator,
-                        currentFrame,
-                        steps,
-                        BATTLE_WIN_ANIM_TICKS,
-                        maxFrame)) {
+            if (resultPoseHoldFrame < 0) {
+                const JokerTexture& winTex = g_JokerAnims[JOKER_ANIM_WIN].joker;
+                if (winTex.texture) {
+                    resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                        winTex.texture,
+                        kJokerCellSize,
+                        kJokerCellSize,
+                        winTex.cols,
+                        maxFrame);
+                }
+                else {
+                    resultPoseHoldFrame = maxFrame - 1;
+                }
+            }
+
+            const int winEndFrame = resultPoseHoldFrame;
+            const int winAnimFrames = winEndFrame + 1;
+            if (!winRunoffActive) {
+                if (!resultPoseAnimLocked) {
+                    if (currentFrame < winEndFrame) {
+                        if (AdvanceOneShotFrame(
+                            animAccumulator,
+                            currentFrame,
+                            steps,
+                            BATTLE_WIN_ANIM_TICKS,
+                            winAnimFrames)) {
+                            currentFrame = winEndFrame;
+                            resultPoseAnimLocked = true;
+                        }
+                    }
+                    else {
+                        currentFrame = winEndFrame;
                         resultPoseAnimLocked = true;
                     }
                 }
                 else {
-                    resultPoseAnimLocked = true;
+                    currentFrame = winEndFrame;
+                    winRunoffActive = true;
+                    currentFrame = 0;
+                    animAccumulator = 0;
+                    maxFrame = g_JokerAnims[JOKER_ANIM_RUN].joker.maxFrame;
+                    if (maxFrame < 1) maxFrame = 1;
                 }
             }
-
-            if (resultPoseAnimLocked) {
-                if (resultPoseHoldFrame < 0) {
-                    const JokerTexture& winTex = g_JokerAnims[JOKER_ANIM_WIN].joker;
-                    if (winTex.texture) {
-                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
-                            winTex.texture,
-                            kJokerCellSize,
-                            kJokerCellSize,
-                            winTex.cols,
-                            maxFrame);
-                    }
-                    else {
-                        resultPoseHoldFrame = maxFrame - 1;
-                    }
-                }
-                currentFrame = resultPoseHoldFrame;
+            else {
+                TryApplyHorizontalDelta((float)facingDirection * JOKER_WIN_RUN_SPEED * steps);
+                ClampPosition();
+                AdvanceLoopFrame(
+                    animAccumulator,
+                    currentFrame,
+                    steps,
+                    MAKOTO_LOOP_TICKS_FAST,
+                    maxFrame);
             }
         }
         else if (currentState == JOKER_LOSE) {
@@ -1343,6 +1524,7 @@ void Joker::TakeDamage(int damage) {
         }
         trainingIdleFrames = 0;
         idleWaitFrames = 0;
+        NotifyFighterDamageApplied(*this, appliedDamage);
         UpdateHurtbox();
         return;
     }
@@ -1354,7 +1536,8 @@ void Joker::TakeDamage(int damage) {
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (!TRAINING_MODE && health <= 0) isDead = true;
+        if (ShouldFighterDieOnZeroHealth() && !TRAINING_MODE && health <= 0) isDead = true;
+        NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
 
@@ -1364,9 +1547,11 @@ void Joker::TakeDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 bool Joker::IsInGuardState() const {
@@ -1384,13 +1569,15 @@ void Joker::HoldGuardState(bool airborne) {
 void Joker::ApplySkillDamage(int damage) {
     if (isDead) return;
 
-    health -= damage;
+    const int appliedDamage = damage;
+    health -= appliedDamage;
     if (health < 0) health = 0;
     trainingIdleFrames = 0;
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (!TRAINING_MODE && health <= 0) isDead = true;
+        if (ShouldFighterDieOnZeroHealth() && !TRAINING_MODE && health <= 0) isDead = true;
+        NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
 
@@ -1400,9 +1587,11 @@ void Joker::ApplySkillDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 bool Joker::IsSuperMoveActive() const {
@@ -1426,7 +1615,20 @@ void Joker::BeginVictoryPose() {
     isDamageAnimating = false;
     resultPoseAnimLocked = false;
     resultPoseHoldFrame = -1;
+    winRunoffActive = false;
     EnterActionState(JOKER_WIN);
+    if (maxFrame < 1) maxFrame = 1;
+    {
+        const JokerTexture& winTex = g_JokerAnims[JOKER_ANIM_WIN].joker;
+        resultPoseHoldFrame = winTex.texture
+            ? FindLastVisibleSheetFrame(
+                winTex.texture,
+                kJokerCellSize,
+                kJokerCellSize,
+                winTex.cols,
+                maxFrame)
+            : maxFrame - 1;
+    }
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateHurtbox();
@@ -1447,6 +1649,10 @@ void Joker::BeginDefeatPose() {
 
 bool Joker::IsPlayingResultPose() const {
     return currentState == JOKER_WIN || currentState == JOKER_LOSE;
+}
+
+bool Joker::IsInKnockdownReaction() const {
+    return isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER;
 }
 
 bool Joker::IsInCombatAction() const {
@@ -1478,6 +1684,7 @@ void Joker::Reset() {
     verticalVelocity = 0.0f;
     hitThisAttack = false;
     attackButtonHeld = false;
+    winRunoffActive = false;
     ResetAllStates();
     UpdateHurtbox();
 }
@@ -1590,7 +1797,8 @@ void Joker::Render(LPD3DXSPRITE sprite) {
 
     UpdateHurtbox();
 
-    JokerAnimId animId = GetAnimForState(currentState);
+    const bool useWinRunoffAnim = (currentState == JOKER_WIN && winRunoffActive);
+    JokerAnimId animId = useWinRunoffAnim ? JOKER_ANIM_RUN : GetAnimForState(currentState);
     const JokerTextureSet* setPtr = &g_JokerAnims[animId];
     // Fallback to stance if the current anim sheet is missing (prevents idle "vanishing").
     if (!setPtr->joker.texture) {
@@ -1619,7 +1827,8 @@ void Joker::Render(LPD3DXSPRITE sprite) {
         currentState == JOKER_DAMAGE ||
         currentState == JOKER_RECOVER ||
         currentState == JOKER_INTRO ||
-        currentState == JOKER_WIN ||
+        winRunoffActive ||
+        (currentState == JOKER_WIN && !winRunoffActive) ||
         currentState == JOKER_LOSE;
 
     D3DXVECTOR3 bodyPos = position;
@@ -1652,20 +1861,26 @@ void Joker::Render(LPD3DXSPRITE sprite) {
         return;
     }
 
-    // Eiha / Eigaon: Arsene behind, then Joker body (same pairing for both).
+    // Eiha / Eigaon: Arsene behind, then Joker body (Arsene uses its own skill frame).
     if (set.pairedWithArsene && set.arsene.texture && !hideArsene) {
-        DrawArseneSprite(sprite, const_cast<JokerTexture&>(set.arsene), bodyFrame, color);
+        const int arseneFrame = (showArseneSkill &&
+            (currentState == JOKER_EIHA || currentState == JOKER_EIGAON))
+            ? arseneSkillFrame
+            : bodyFrame;
+        DrawArseneSprite(sprite, const_cast<JokerTexture&>(set.arsene), arseneFrame, color);
     }
 
     DrawBodySprite(sprite, const_cast<JokerTexture&>(set.joker), bodyFrame, bodyPos, color);
 
     // Taunt / win: Mona on the ground in front of Joker (same slot as taunt).
-    if (currentState == JOKER_TAUNT || currentState == JOKER_WIN) {
+    if ((currentState == JOKER_TAUNT || currentState == JOKER_WIN) && !winRunoffActive) {
         const JokerTexture& monaTex = g_MonaWin.texture
             ? g_MonaWin
             : g_JokerAnims[JOKER_ANIM_TAUNT].jokerEffect;
         if (monaTex.texture) {
-            int monaFrame = (currentState == JOKER_WIN) ? bodyFrame : skillEffectFrame;
+            int monaFrame = (currentState == JOKER_WIN)
+                ? ((resultPoseAnimLocked && resultPoseHoldFrame >= 0) ? resultPoseHoldFrame : bodyFrame)
+                : skillEffectFrame;
             if (monaFrame < 0) monaFrame = 0;
             if (monaTex.maxFrame > 0 && monaFrame >= monaTex.maxFrame) {
                 monaFrame = monaTex.maxFrame - 1;
@@ -1700,7 +1915,10 @@ void Joker::Render(LPD3DXSPRITE sprite) {
             DrawSkillEffectOnOpponent(sprite, const_cast<JokerTexture&>(set.arseneEffect), skillEffectFrame, color);
         }
     }
-    else if (currentState != JOKER_TAUNT && (set.jokerEffect.texture || set.arseneEffect.texture)) {
+    else if (currentState != JOKER_TAUNT &&
+        currentState != JOKER_WIN &&
+        currentState != JOKER_LOSE &&
+        (set.jokerEffect.texture || set.arseneEffect.texture)) {
         Fighter* opponent = GetOpponent(*this);
         if (opponent && !opponent->isDead) {
             const AABB& hb = opponent->GetHurtbox();

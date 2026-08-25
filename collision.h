@@ -20,6 +20,15 @@ struct AABB {
     float CenterY() const { return y + height * 0.5f; }
 };
 
+// Horizontal separation between two AABBs (0 when overlapping on X).
+inline float GetAabbHorizontalGap(const AABB& a, const AABB& b) {
+    const float aRight = a.x + a.width;
+    const float bRight = b.x + b.width;
+    if (aRight <= b.x) return b.x - aRight;
+    if (bRight <= a.x) return a.x - bRight;
+    return 0.0f;
+}
+
 // Non-axis-aligned oriented bounding box (rotation around center).
 struct OBB {
     float centerX;
@@ -134,3 +143,37 @@ private:
         }
     }
 };
+
+struct CollisionSelfTestReport {
+    bool aabbHit = false;
+    bool sweptHit = false;
+    bool obbHit = false;
+    bool overlapResolved = false;
+
+    bool AllPassed() const {
+        return aabbHit && sweptHit && obbHit && overlapResolved;
+    }
+};
+
+inline CollisionSelfTestReport RunCollisionModuleSelfTest() {
+    CollisionSelfTestReport report;
+
+    AABB boxA = { 0.0f, 0.0f, 40.0f, 60.0f };
+    AABB boxB = { 20.0f, 10.0f, 40.0f, 60.0f };
+    report.aabbHit = CollisionHelper::AABBIntersect(boxA, boxB);
+
+    AABB fastMover = { 0.0f, 0.0f, 20.0f, 20.0f };
+    AABB thinWall = { 50.0f, 0.0f, 10.0f, 40.0f };
+    report.sweptHit = CollisionHelper::SweptAABBIntersects(fastMover, thinWall, 80.0f, 0.0f);
+
+    OBB orientedA = { 100.0f, 100.0f, 30.0f, 20.0f, 0.4f };
+    OBB orientedB = { 120.0f, 105.0f, 25.0f, 15.0f, -0.3f };
+    report.obbHit = CollisionHelper::OBBIntersect(orientedA, orientedB);
+
+    float pushX = 0.0f;
+    float pushY = 0.0f;
+    AABB moving = boxA;
+    report.overlapResolved = CollisionHelper::ResolveAABBOverlap(moving, boxB, pushX, pushY);
+
+    return report;
+}

@@ -4,6 +4,7 @@
 #include "../../renderer.h"
 #include "../../game_logic.h"
 #include "../../input.h"
+#include "../../audio.h"
 #include <cmath>
 #include <optional>
 #include <stdio.h>
@@ -293,6 +294,18 @@ bool IsSummonState(int state) {
 
 bool IsSpecialMeleeState(int state) {
     return state == NARUKAMI_RAGING_LION || state == NARUKAMI_BIG_GAMBLE;
+}
+
+bool IsCpuGroundLocomotionState(int state) {
+    switch (state) {
+    case NARUKAMI_STANCE:
+    case NARUKAMI_WALK:
+    case NARUKAMI_RUN:
+    case NARUKAMI_IDLE:
+        return true;
+    default:
+        return false;
+    }
 }
 
 void BuildAttackBox(
@@ -613,6 +626,7 @@ void Narukami::CompleteToStance() {
 }
 
 void Narukami::BeginSummon(int state) {
+    g_SoundManager.PlayPersonaSummonSfx();
     EnterState(state);
     skillHit = false;
     skillEndHold = 0;
@@ -648,6 +662,7 @@ void Narukami::BeginIntroDiscard() {
 }
 
 void Narukami::BeginPersonaSummon(int summonState, int followUpAttack) {
+    g_SoundManager.PlayPersonaSummonSfx();
     // Makoto-style: persona_attack / persona_air_attack first, then izanagi attack.
     pendingAttackState = followUpAttack;
     showIzanagi = false;
@@ -699,7 +714,7 @@ void Narukami::FinishRecover() {
 }
 
 void Narukami::CheckAttackCollision(Fighter& enemy) {
-    if (enemy.isDead) return;
+    if (!enemy.CanReceiveHit()) return;
 
     const float scale = GetCharacterRenderScale();
     AttackData* data = nullptr;
@@ -749,8 +764,8 @@ void Narukami::CheckAttackCollision(Fighter& enemy) {
             }
             const float dashY = position.y - DASH_HITBOX_UP * scale;
             const AABB dashBox = { dashX, dashY, dashW, dashH };
-            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox())) {
-                enemy.TakeDamage(DASH_HIT_DAMAGE);
+            if (CollisionHelper::AABBIntersect(dashBox, enemy.GetHurtbox()) && enemy.CanReceiveHit()) {
+                DealMeleeHit(*this, enemy, DASH_HIT_DAMAGE);
                 dashHasHit = true;
                 RestoreSp(SP_GAIN_ON_HIT);
             }
@@ -773,9 +788,9 @@ void Narukami::CheckAttackCollision(Fighter& enemy) {
         BuildAttackBox(position, facingDirection, scale, *data, attackX, attackY, boxW, boxH);
 
         const AABB attackBox = { attackX, attackY, boxW, boxH };
-        if (!hitThisAttack && CollisionHelper::AABBIntersect(attackBox, enemy.GetHurtbox())) {
+        if (!hitThisAttack && enemy.CanReceiveHit() && CollisionHelper::AABBIntersect(attackBox, enemy.GetHurtbox())) {
             const int dmg = (specialDamage > 0) ? specialDamage : data->damage;
-            enemy.TakeDamage(dmg);
+            DealMeleeHit(*this, enemy, dmg);
             hitThisAttack = true;
             RestoreSp(SP_GAIN_ON_HIT);
         }
@@ -866,8 +881,8 @@ void Narukami::UpdateSummon(int steps, Fighter& enemy) {
         const bool hitReady = isMyriad
             ? (izanagiFrame >= kSkillHitStartFrame || currentFrame >= max(1, maxFrame / 4))
             : (effectFrame >= kSkillHitStartFrame || currentFrame >= kSkillHitStartFrame);
-        if (hitReady && !enemy.isDead) {
-            enemy.ApplySkillDamage(skillDamage);
+        if (hitReady && enemy.CanReceiveHit()) {
+            DealSkillHit(*this, enemy, skillDamage);
             skillHit = true;
         }
     }
@@ -1007,15 +1022,13 @@ void Narukami::UpdateHuman(int steps) {
     Fighter* opponent = GetOpponent(*this);
     if (!opponent) return;
 
-    if (!IsHumanControlled()) {
-        facingDirection = (opponent->GetPosition().x >= position.x) ? 1 : -1;
-    }
-
     const int animSteps = 1;
     const bool attackDownNow = IsGameMouseDown(VK_LBUTTON);
     const bool attackJustPressed = attackDownNow && !attackButtonHeld;
     attackButtonHeld = attackDownNow;
-    const bool isAttackPressed = IsHumanControlled() ? attackJustPressed : attackDownNow;
+    // CPU ground attacks are committed only in CommitCpuAttackAction().
+    const bool isAttackPressed = IsHumanControlled() ? attackJustPressed : false;
+    const bool allowCpuSkillInput = IsHumanControlled();
 
     if (IsSummonState(currentState)) {
         UpdateSummon(steps, *opponent);
@@ -1024,18 +1037,15 @@ void Narukami::UpdateHuman(int steps) {
     }
 
     bool isRunning = IsGameKeyDown(DIK_LSHIFT) || IsGameKeyDown(DIK_RSHIFT);
-    bool isMoving = false;
-    float moveDirX = 0.0f;
+    const HorizontalMoveInput move = ReadHorizontalMoveInput();
+    bool isMoving = move.isMoving;
+    float moveDirX = move.moveDirX;
 
-    if (IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A)) {
+    if (move.leftHeld && !move.rightHeld) {
         facingDirection = -1;
-        moveDirX = -1.0f;
-        isMoving = true;
     }
-    if (IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D)) {
+    else if (move.rightHeld && !move.leftHeld) {
         facingDirection = 1;
-        moveDirX = 1.0f;
-        isMoving = true;
     }
 
     if (isRunning && isMoving) {
@@ -1046,7 +1056,9 @@ void Narukami::UpdateHuman(int steps) {
     else {
         RegenStamina(animSteps);
     }
-    int currentVelocity = isRunning ? (velocity * 2) : velocity;
+    const float currentVelocity = ComputeSmoothedLocomotionSpeed(
+        velocity, isRunning && isMoving, runBlend, steps);
+    const bool useRunAnim = ShouldUseRunLocomotion(runBlend);
 
     if (AllowsMovement(currentState) && isMoving && currentState != NARUKAMI_DASH) {
         TryApplyHorizontalDelta(moveDirX * currentVelocity * steps);
@@ -1148,17 +1160,15 @@ void Narukami::UpdateHuman(int steps) {
             IsGameKeyDown(DIK_3) ||
             IsGameKeyDown(DIK_4) ||
             IsGameKeyDown(DIK_5);
-        if (checkInput) {
-            CompleteToStance();
+        if (!checkInput) {
+            maxFrame = GetMaxFrameForState(NARUKAMI_IDLE);
+            if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kIdlePlayTicks, maxFrame)) {
+                CompleteToStance();
+            }
             UpdateScaledHurtbox();
             return;
         }
-        maxFrame = GetMaxFrameForState(NARUKAMI_IDLE);
-        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kIdlePlayTicks, maxFrame)) {
-            CompleteToStance();
-        }
-        UpdateScaledHurtbox();
-        return;
+        CompleteToStance();
     }
 
     if (currentState == NARUKAMI_DASH) {
@@ -1411,36 +1421,28 @@ void Narukami::UpdateHuman(int steps) {
             jumpCount = 1;
         }
     }
-    else if (isLightningPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (allowCpuSkillInput && isLightningPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // G → lightning_flash
         nextState = NARUKAMI_DOWN_ATTACK;
         showIzanagi = false;
     }
-    else if (isRagingHeld && isAttackPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (allowCpuSkillInput && isRagingHeld && isAttackPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // W + LMB → raging_lion
         nextState = NARUKAMI_RAGING_LION;
         showIzanagi = false;
     }
-    else if (isSwiftHeld && isAttackPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (allowCpuSkillInput && isSwiftHeld && isAttackPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // S + LMB → swift_strike + izanagi
         nextState = NARUKAMI_SIDE_ATTACK;
     }
-    else if (isBigGamblePressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (allowCpuSkillInput && isBigGamblePressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // E → big_gamble
         nextState = NARUKAMI_BIG_GAMBLE;
         showIzanagi = false;
     }
-    else if (!IsHumanControlled() && isBigGamblePressed) {
-        nextState = NARUKAMI_ATTACK;
-        showIzanagi = false;
-    }
-    else if (isCrossSlashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (allowCpuSkillInput && isCrossSlashPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // R → cross_slash + izanagi
         nextState = NARUKAMI_ATTACK_UP;
-    }
-    else if (!IsHumanControlled() && isCrossSlashPressed) {
-        nextState = NARUKAMI_ATTACK;
-        showIzanagi = false;
     }
     else if (isDashHeld && TryConsumeStamina(STAMINA_COST_ACTION)) {
         // J → dash
@@ -1456,19 +1458,19 @@ void Narukami::UpdateHuman(int steps) {
             ? (moveDirX * currentVelocity * kAirControlMultiplier)
             : 0.0f;
     }
-    else if (isCrouchPressed && isAttackPressed) {
+    else if (allowCpuSkillInput && isCrouchPressed && isAttackPressed) {
         nextState = NARUKAMI_CROUCH_ATTACK;
         showIzanagi = false;
     }
-    else if (isAttackPressed) {
+    else if (allowCpuSkillInput && isAttackPressed) {
         nextState = NARUKAMI_ATTACK;
         showIzanagi = false;
     }
-    else if (isMoving) {
-        nextState = isRunning ? NARUKAMI_RUN : NARUKAMI_WALK;
-    }
     else if (isGuardPressed) {
         nextState = IsOnGround() ? NARUKAMI_GUARD : NARUKAMI_GUARD_AIR;
+    }
+    else if (isMoving) {
+        nextState = useRunAnim ? NARUKAMI_RUN : NARUKAMI_WALK;
     }
     else if (isCrouchPressed && !isMoving) {
         nextState = NARUKAMI_CROUCH;
@@ -1516,6 +1518,40 @@ void Narukami::UpdateHuman(int steps) {
     UpdateScaledHurtbox();
 }
 
+void Narukami::CommitCpuAttackAction() {
+    if (IsHumanControlled() || !IsBattleInputAllowed() || !IsOnGround()) return;
+    if (!IsCpuGroundLocomotionState(currentState)) return;
+    if (aiAttackPulse <= 0) return;
+
+    Fighter* opponent = GetOpponent(*this);
+    if (!opponent || opponent->IsDead()) return;
+
+    // Must be in real hit range — use the attack box that will actually fire.
+    const AttackData* strikeData = &attackHitbox;
+    if (aiAttackMode == 2) {
+        strikeData = &attackUpHitbox;
+    }
+    if (!WouldMeleeAttackReach(*this, *opponent, *strikeData)) return;
+
+    showIzanagi = false;
+    hitThisAttack = false;
+
+    if (aiAttackMode == 2 && TryConsumeStamina(STAMINA_COST_ACTION)) {
+        showIzanagi = true;
+        EnterState(NARUKAMI_ATTACK_UP);
+        return;
+    }
+    if (aiAttackMode == 1 && TryConsumeStamina(STAMINA_COST_ACTION)) {
+        EnterState(NARUKAMI_BIG_GAMBLE);
+        return;
+    }
+    EnterState(NARUKAMI_ATTACK);
+}
+
+void Narukami::SyncHeldInputState() {
+    attackButtonHeld = IsGameMouseDown(VK_LBUTTON);
+}
+
 void Narukami::Update() {
     if (IsPlayingResultPose()) {
         maxFrame = GetMaxFrameForState(currentState);
@@ -1533,37 +1569,41 @@ void Narukami::Update() {
             currentFrame = maxFrame - 1;
         }
         else if (currentState == NARUKAMI_WIN) {
+            if (resultPoseHoldFrame < 0) {
+                if (g_Win.texture) {
+                    resultPoseHoldFrame = FindLastVisibleSheetFrame(
+                        g_Win.texture,
+                        NARUKAMI_CELL_SIZE,
+                        NARUKAMI_CELL_SIZE,
+                        g_Win.cols,
+                        maxFrame);
+                }
+                else {
+                    resultPoseHoldFrame = maxFrame - 1;
+                }
+            }
+
+            const int winEndFrame = resultPoseHoldFrame;
+            const int winAnimFrames = winEndFrame + 1;
             if (!resultPoseAnimLocked) {
-                if (currentFrame < maxFrame - 1) {
+                if (currentFrame < winEndFrame) {
                     if (AdvanceOneShotFrame(
                         animAccumulator,
                         currentFrame,
                         steps,
                         BATTLE_WIN_ANIM_TICKS,
-                        maxFrame)) {
+                        winAnimFrames)) {
+                        currentFrame = winEndFrame;
                         resultPoseAnimLocked = true;
                     }
                 }
                 else {
+                    currentFrame = winEndFrame;
                     resultPoseAnimLocked = true;
                 }
             }
-
-            if (resultPoseAnimLocked) {
-                if (resultPoseHoldFrame < 0) {
-                    if (g_Win.texture) {
-                        resultPoseHoldFrame = FindLastVisibleSheetFrame(
-                            g_Win.texture,
-                            NARUKAMI_CELL_SIZE,
-                            NARUKAMI_CELL_SIZE,
-                            g_Win.cols,
-                            maxFrame);
-                    }
-                    else {
-                        resultPoseHoldFrame = maxFrame - 1;
-                    }
-                }
-                currentFrame = resultPoseHoldFrame;
+            else {
+                currentFrame = winEndFrame;
             }
         }
 
@@ -1593,6 +1633,7 @@ void Narukami::Update() {
     if (!IsHumanControlled()) {
         aiInputScope.emplace();
         DriveSimpleAi(*this);
+        CommitCpuAttackAction();
     }
     UpdateHuman(steps);
 
@@ -1682,7 +1723,9 @@ void Narukami::Render(LPD3DXSPRITE sprite) {
     }
 
     if (currentState == NARUKAMI_WIN && g_IzanagiWin.texture && g_IzanagiWin.maxFrame > 0) {
-        int winFrame = currentFrame;
+        int winFrame = (resultPoseAnimLocked && resultPoseHoldFrame >= 0)
+            ? resultPoseHoldFrame
+            : currentFrame;
         if (winFrame >= g_IzanagiWin.maxFrame) {
             winFrame = g_IzanagiWin.maxFrame - 1;
         }
@@ -1817,6 +1860,7 @@ void Narukami::TakeDamage(int damage) {
             health -= appliedDamage;
             if (health < 0) health = 0;
         }
+        NotifyFighterDamageApplied(*this, appliedDamage);
         UpdateScaledHurtbox();
         return;
     }
@@ -1828,9 +1872,10 @@ void Narukami::TakeDamage(int damage) {
         if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && health <= 0) {
+        if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
             isDead = true;
         }
+        NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
 
@@ -1844,9 +1889,11 @@ void Narukami::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 bool Narukami::IsInGuardState() const {
@@ -1864,7 +1911,8 @@ void Narukami::HoldGuardState(bool airborne) {
 void Narukami::ApplySkillDamage(int damage) {
     // Makoto/Joker style: skills always deal HP even during opponent damage/recover.
     if (isDead) return;
-    health -= damage;
+    const int appliedDamage = damage;
+    health -= appliedDamage;
     if (health < 0) health = 0;
 
     if (currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER) {
@@ -1875,9 +1923,11 @@ void Narukami::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && health <= 0) {
+    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
+
+    NotifyFighterDamageApplied(*this, appliedDamage);
 }
 
 void Narukami::BeginVictoryPose() {
@@ -1892,6 +1942,14 @@ void Narukami::BeginVictoryPose() {
     animAccumulator = 0;
     maxFrame = GetMaxFrameForState(NARUKAMI_WIN);
     if (maxFrame < 1) maxFrame = 1;
+    resultPoseHoldFrame = g_Win.texture
+        ? FindLastVisibleSheetFrame(
+            g_Win.texture,
+            NARUKAMI_CELL_SIZE,
+            NARUKAMI_CELL_SIZE,
+            g_Win.cols,
+            maxFrame)
+        : maxFrame - 1;
     position.y = CHARACTER_GROUND_Y;
     verticalVelocity = 0.0f;
     UpdateScaledHurtbox();
@@ -1920,6 +1978,10 @@ void Narukami::BeginDefeatPose() {
 
 bool Narukami::IsPlayingResultPose() const {
     return currentState == NARUKAMI_WIN || currentState == NARUKAMI_LOSE;
+}
+
+bool Narukami::IsInKnockdownReaction() const {
+    return isHit || currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER;
 }
 
 bool Narukami::IsInCombatAction() const {

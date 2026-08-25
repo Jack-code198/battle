@@ -6,7 +6,8 @@ SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
     : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), selectionSound(nullptr),
-      musicChannel(nullptr), currentTrack(nullptr), isInitialised(false), isPlaying(false), isMuted(false) {
+      personaSummonSfx(nullptr), musicChannel(nullptr), currentTrack(nullptr),
+      isInitialised(false), isPlaying(false), isMuted(false) {
 }
 
 SoundManager::~SoundManager() {
@@ -60,9 +61,22 @@ bool SoundManager::Initialise() {
         selectSfx = nullptr;
     }
 
+    FMOD::Sound* personaSummon = nullptr;
+    result = system->createSound(
+        "assets/sound/persona_summon_sound_effect.mp3",
+        FMOD_DEFAULT,
+        nullptr,
+        &personaSummon);
+    if (result != FMOD_OK) {
+        personaSummon = nullptr;
+    }
+
     if (!menuTrack && !battleTrack) {
         if (selectSfx) {
             selectSfx->release();
+        }
+        if (personaSummon) {
+            personaSummon->release();
         }
         system->close();
         system->release();
@@ -73,6 +87,7 @@ bool SoundManager::Initialise() {
     menuMusic = menuTrack;
     battleMusic = battleTrack;
     selectionSound = selectSfx;
+    personaSummonSfx = personaSummon;
     isInitialised = true;
     return true;
 }
@@ -150,6 +165,23 @@ void SoundManager::PlaySelectionSound() {
     }
 }
 
+void SoundManager::PlayPersonaSummonSfx(float volume) {
+    if (!isInitialised || personaSummonSfx == nullptr) {
+        return;
+    }
+
+    FMOD::System* system = static_cast<FMOD::System*>(fmodSystem);
+    FMOD::Sound* sound = static_cast<FMOD::Sound*>(personaSummonSfx);
+    FMOD::Channel* channel = nullptr;
+
+    if (system->playSound(sound, nullptr, false, &channel) == FMOD_OK && channel != nullptr) {
+        channel->setVolume(volume);
+        if (isMuted) {
+            channel->setMute(true);
+        }
+    }
+}
+
 void SoundManager::ToggleMusicMute() {
     isMuted = !isMuted;
     if (musicChannel != nullptr) {
@@ -183,6 +215,11 @@ void SoundManager::Shutdown() {
     if (selectionSound != nullptr) {
         static_cast<FMOD::Sound*>(selectionSound)->release();
         selectionSound = nullptr;
+    }
+
+    if (personaSummonSfx != nullptr) {
+        static_cast<FMOD::Sound*>(personaSummonSfx)->release();
+        personaSummonSfx = nullptr;
     }
 
     if (fmodSystem != nullptr) {

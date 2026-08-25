@@ -172,9 +172,19 @@ void NotifyStageDeviceLost() {
 }
 
 void NotifyStageDeviceReset() {
-    if (g_StageFont) g_StageFont->OnResetDevice();
-    if (g_StageTitleFont) g_StageTitleFont->OnResetDevice();
-    if (g_StageHintFont) g_StageHintFont->OnResetDevice();
+    if (g_StageFont && FAILED(g_StageFont->OnResetDevice())) {
+        g_StageFont->Release();
+        g_StageFont = nullptr;
+    }
+    if (g_StageTitleFont && FAILED(g_StageTitleFont->OnResetDevice())) {
+        g_StageTitleFont->Release();
+        g_StageTitleFont = nullptr;
+    }
+    if (g_StageHintFont && FAILED(g_StageHintFont->OnResetDevice())) {
+        g_StageHintFont->Release();
+        g_StageHintFont = nullptr;
+    }
+    LoadStageFont();
 }
 
 void ApplySelectedStageToBattle() {

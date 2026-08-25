@@ -1,4 +1,4 @@
-#include "menuMain.h"
+#include "MainMenu.h"
 #include "input.h"
 #include "audio.h"
 
@@ -141,8 +141,15 @@ void NotifyMenuDeviceLost() {
 }
 
 void NotifyMenuDeviceReset() {
-    if (menuFont) menuFont->OnResetDevice();
-    if (titleFont) titleFont->OnResetDevice();
+    if (menuFont && FAILED(menuFont->OnResetDevice())) {
+        menuFont->Release();
+        menuFont = nullptr;
+    }
+    if (titleFont && FAILED(titleFont->OnResetDevice())) {
+        titleFont->Release();
+        titleFont = nullptr;
+    }
+    LoadMenuFont();
 }
 
 static void UpdateOptionRects() {

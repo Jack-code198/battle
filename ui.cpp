@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "tutorial_guide.h"
 #include "renderer.h"
 #include "game_logic.h"
 #include "player/CharacterId.h"
@@ -10,7 +11,9 @@ static LPDIRECT3DTEXTURE9 g_NarukamiIconTex = nullptr;
 static LPDIRECT3DTEXTURE9 g_YosukeIconTex = nullptr;
 static ID3DXFont* g_HudFont = nullptr;
 static ID3DXFont* g_BannerFont = nullptr;
+static ID3DXFont* g_TutorialFont = nullptr;
 static bool g_HudFontLoaded = false;
+static bool g_TutorialFontLoaded = false;
 static const char* g_LoadedHudFontPath = nullptr;
 
 struct HudHealthTracker {
@@ -67,6 +70,54 @@ static bool LoadHudFont() {
     }
 
     return SUCCEEDED(hr) && g_HudFont != nullptr;
+}
+
+static bool LoadTutorialFont() {
+    if (g_TutorialFontLoaded) {
+        return g_TutorialFont != nullptr;
+    }
+
+    if (AddFontResourceExA(NORMAL_FONT_FILE, FR_PRIVATE, 0) != 0 && !g_LoadedHudFontPath) {
+        g_LoadedHudFontPath = NORMAL_FONT_FILE;
+    }
+
+    g_TutorialFontLoaded = true;
+    if (!g_pD3DDevice) return false;
+
+    auto tryCreateFont = [](const char* familyName, INT height) -> HRESULT {
+        if (g_TutorialFont) {
+            g_TutorialFont->Release();
+            g_TutorialFont = nullptr;
+        }
+        return D3DXCreateFontA(
+            g_pD3DDevice,
+            height,
+            0,
+            FW_NORMAL,
+            1,
+            FALSE,
+            DEFAULT_CHARSET,
+            OUT_TT_PRECIS,
+            ANTIALIASED_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE,
+            familyName,
+            &g_TutorialFont);
+    };
+
+    static const char* kTutorialFontCandidates[] = {
+        NORMAL_FONT_FAMILY,
+        "Arial"
+    };
+
+    static const INT kTutorialFontHeight = 17;
+
+    HRESULT hr = E_FAIL;
+    for (const char* familyName : kTutorialFontCandidates) {
+        hr = tryCreateFont(familyName, kTutorialFontHeight);
+        if (SUCCEEDED(hr) && g_TutorialFont) break;
+    }
+
+    return SUCCEEDED(hr) && g_TutorialFont != nullptr;
 }
 
 static void EnsureBannerFont() {
@@ -137,6 +188,40 @@ void DrawBattleTimerOverlay() {
         &rect,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE,
         color);
+}
+
+void DrawHitComboOverlay() {
+    if (!IsBattleCombatActive() || IsTutorialBattleMode() || IsBattleEndSequence()) return;
+    if (!LoadHudFont() || !g_HudFont) return;
+
+    const int combo = GetP1HitCombo();
+    if (combo < HIT_COMBO_MIN_DISPLAY) return;
+
+    char comboText[32];
+    sprintf_s(comboText, "%d HIT COMBO!", combo);
+
+    const float iconSize = HUD_ICON_SIZE;
+    const float barGap = HUD_BAR_GAP;
+    const float totalBarStackHeight =
+        HUD_HP_BAR_HEIGHT + HUD_SP_BAR_HEIGHT + HUD_STAMINA_BAR_HEIGHT + barGap * 2.0f;
+    const float p1IconX = HUD_EDGE_MARGIN;
+    const float p1BarX = p1IconX + iconSize + HUD_ICON_BAR_GAP;
+    const float p1BarY = HUD_TOP_Y + (iconSize - totalBarStackHeight) * 0.5f;
+    const float comboY = p1BarY + totalBarStackHeight + HUD_COMBO_OFFSET_Y;
+
+    RECT rect = {
+        (LONG)p1BarX,
+        (LONG)comboY,
+        (LONG)(p1BarX + HUD_BAR_WIDTH),
+        (LONG)(comboY + HUD_NAME_TEXT_HEIGHT)
+    };
+    g_HudFont->DrawTextA(
+        nullptr,
+        comboText,
+        -1,
+        &rect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        D3DCOLOR_XRGB(255, 220, 64));
 }
 
 void DrawBattleFadeOverlay(LPD3DXSPRITE sprite) {
@@ -476,11 +561,24 @@ void CleanUpHudTextures() {
 void NotifyHudDeviceLost() {
     if (g_HudFont) g_HudFont->OnLostDevice();
     if (g_BannerFont) g_BannerFont->OnLostDevice();
+    if (g_TutorialFont) g_TutorialFont->OnLostDevice();
+}
+
+static void ResetHudFontDevice(ID3DXFont*& font, bool& loadedFlag) {
+    if (!font) return;
+    if (FAILED(font->OnResetDevice())) {
+        font->Release();
+        font = nullptr;
+        loadedFlag = false;
+    }
 }
 
 void NotifyHudDeviceReset() {
-    if (g_HudFont) g_HudFont->OnResetDevice();
-    if (g_BannerFont) g_BannerFont->OnResetDevice();
+    ResetHudFontDevice(g_HudFont, g_HudFontLoaded);
+    ResetHudFontDevice(g_BannerFont, g_HudFontLoaded);
+    ResetHudFontDevice(g_TutorialFont, g_TutorialFontLoaded);
+    LoadHudFont();
+    LoadTutorialFont();
 }
 
 void ResetBattleHud(int p1MaxHealth, int p2MaxHealth) {
@@ -495,10 +593,18 @@ void ResetBattleHud(int p1MaxHealth, int p2MaxHealth) {
 void SyncBattleHudHealth(int playerSlot, int health, int maxHealth) {
     (void)maxHealth;
     HudHealthTracker& tracker = (playerSlot == 1) ? g_P1HealthTrack : g_P2HealthTrack;
-    // Training heal / hard sync: snap chip so it does not keep old damage.
-    tracker.displayHealth = (float)health;
-    tracker.syncedHealth = health;
-    tracker.chipHoldFrames = 0;
+    if (tracker.syncedHealth < 0) {
+        tracker.displayHealth = (float)health;
+        tracker.syncedHealth = health;
+        tracker.chipHoldFrames = 0;
+        return;
+    }
+    // Heal / hard reset only. Damage chip is driven by UpdateHudHealthTracker in DrawBattleHud.
+    if (health >= tracker.syncedHealth) {
+        tracker.displayHealth = (float)health;
+        tracker.syncedHealth = health;
+        tracker.chipHoldFrames = 0;
+    }
 }
 
 void DrawBattleHud(
@@ -583,4 +689,127 @@ void DrawBattleHud(
     DrawHudText(p1Name, p1NameX, nameY, nameColor, false, 0.0f);
     DrawHudText(p2Name, 0.0f, nameY + 1.0f, nameShadow, true, p2NameEdgeX + 1.0f);
     DrawHudText(p2Name, 0.0f, nameY, nameColor, true, p2NameEdgeX);
+}
+
+void DrawTutorialGuideOverlay() {
+    if (!IsTutorialBattleMode() || IsBattleEndSequence()) return;
+    if (IsTutorialGuideComplete()) return;
+    if (!LoadTutorialFont() || !g_TutorialFont) return;
+
+    const float panelX = 12.0f;
+    const float panelY = (float)SCREEN_HEIGHT - 108.0f;
+    const float panelW = 500.0f;
+    const float panelH = 96.0f;
+
+    DrawDebugRect(
+        spriteBrush,
+        panelX,
+        panelY,
+        panelW,
+        panelH,
+        D3DCOLOR_ARGB(190, 12, 12, 24));
+    DrawDebugRect(
+        spriteBrush,
+        panelX,
+        panelY,
+        panelW,
+        2.0f,
+        D3DCOLOR_ARGB(255, 255, 210, 64));
+
+    const D3DCOLOR titleColor = D3DCOLOR_XRGB(255, 220, 96);
+    const D3DCOLOR bodyColor = D3DCOLOR_XRGB(220, 220, 220);
+    const D3DCOLOR tagColor = D3DCOLOR_XRGB(120, 200, 255);
+    const D3DCOLOR noteColor = D3DCOLOR_XRGB(180, 180, 180);
+
+    RECT titleRect = {
+        (LONG)(panelX + 10),
+        (LONG)(panelY + 8),
+        (LONG)(panelX + panelW - 110),
+        (LONG)(panelY + 28)
+    };
+    g_TutorialFont->DrawTextA(
+        nullptr,
+        GetTutorialGuideObjective(),
+        -1,
+        &titleRect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+        titleColor);
+
+    RECT bodyRect = {
+        (LONG)(panelX + 10),
+        (LONG)(panelY + 30),
+        (LONG)(panelX + panelW - 10),
+        (LONG)(panelY + 64)
+    };
+    g_TutorialFont->DrawTextA(
+        nullptr,
+        GetTutorialGuideDetail(),
+        -1,
+        &bodyRect,
+        DT_LEFT | DT_WORDBREAK,
+        bodyColor);
+
+    RECT noteRect = {
+        (LONG)(panelX + 10),
+        (LONG)(panelY + 66),
+        (LONG)(panelX + panelW - 10),
+        (LONG)(panelY + 88)
+    };
+    g_TutorialFont->DrawTextA(
+        nullptr,
+        "Complete this move to unlock the next lesson.",
+        -1,
+        &noteRect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS,
+        noteColor);
+
+    RECT tagRect = {
+        (LONG)(panelX + panelW - 108),
+        (LONG)(panelY + 10),
+        (LONG)(panelX + panelW - 8),
+        (LONG)(panelY + 28)
+    };
+    char stepText[32];
+    const int stepIndex = GetTutorialGuideStepIndex();
+    const int stepCount = GetTutorialGuideStepCount();
+    sprintf_s(stepText, "%d / %d", stepIndex + 1, stepCount);
+    g_TutorialFont->DrawTextA(
+        nullptr,
+        stepText,
+        -1,
+        &tagRect,
+        DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+        tagColor);
+}
+
+void DrawBattleDebugHintOverlay() {
+    if (!IsBattleCombatActive() || IsBattleEndSequence()) return;
+    if (!LoadTutorialFont() || !g_TutorialFont) return;
+
+    const bool tutorial = IsTutorialBattleMode();
+    const char* hint = nullptr;
+    if (tutorial) {
+        hint = g_ShowDebugHitboxes
+            ? "DEBUG: hitboxes ON (B off | H heal)"
+            : "B: hitbox debug | H: heal HP";
+    }
+    else {
+        hint = g_ShowDebugHitboxes
+            ? "DEBUG: hitboxes ON (B to hide)"
+            : "B: hitbox debug";
+    }
+
+    RECT rect = {
+        10,
+        (LONG)SCREEN_HEIGHT - 28,
+        (LONG)SCREEN_WIDTH - 10,
+        (LONG)SCREEN_HEIGHT - 8
+    };
+    g_TutorialFont->DrawTextA(
+        nullptr,
+        hint,
+        -1,
+        &rect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        D3DCOLOR_XRGB(180, 220, 255));
 }

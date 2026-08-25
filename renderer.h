@@ -9,9 +9,12 @@
 
 bool InitD3D();
 void Render();
+void RenderBattleSceneContents();
+void ApplyBrightnessOverlay();
 void WarmupRenderPipeline();
 void CleanUpD3D();
 void ToggleFullscreen();
+void ProcessGraphicsDeviceEvents();
 bool IsFullscreen();
 
 extern IDirect3DDevice9* g_pD3DDevice;

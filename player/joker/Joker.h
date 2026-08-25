@@ -83,6 +83,12 @@ private:
     int skillEffectFrame;
     int skillEffectAccum;
     D3DXVECTOR3 skillEffectPos;
+    int pendingSkillState;
+    int personaAnimAccumulator;
+    int arseneSkillFrame;
+    bool showArseneSkill;
+
+    bool winRunoffActive;
 
     void UpdateHurtbox();
     void TryTrainingHeal();
@@ -99,6 +105,9 @@ private:
     void UpdateHuman(int steps);
     void CheckAttackCollision(Fighter& enemy);
     void UpdateSkillHits(Fighter& enemy, int steps);
+    void BeginPersonaSummonIntro(int pendingSkill);
+    void BeginEihaEigaonSkill(int state);
+    void UpdateEihaEigaonSkill(Fighter& enemy, int steps);
     void ApplyGravity(int steps);
     bool IsOnGround() const;
     void DrawBodySprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, const D3DXVECTOR3& pos, D3DCOLOR color) const;
@@ -111,6 +120,7 @@ public:
     ~Joker() override = default;
 
     void Update() override;
+    void SyncHeldInputState() override;
     void Render(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
     void ApplySkillDamage(int damage) override;
@@ -119,6 +129,7 @@ public:
     void BeginVictoryPose() override;
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
+    bool IsInKnockdownReaction() const override;
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;
@@ -131,6 +142,8 @@ public:
     AABB GetHurtbox();
     AABB GetBodyCollisionBox() const override;
     void UpdateScaledHurtbox() override;
+
+    int GetActionState() const override { return currentState; }
 };
 
 bool LoadJokerTextures();

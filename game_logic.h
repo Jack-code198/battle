@@ -25,8 +25,15 @@ enum class BattleMode {
 
 extern BattleMode g_SelectedBattleMode;
 bool IsTutorialBattleMode();
+bool ShouldFighterDieOnZeroHealth();
+void DealMeleeHit(Fighter& attacker, Fighter& defender, int damage);
+void DealSkillHit(Fighter& attacker, Fighter& defender, int damage);
+void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage);
+int GetP1HitCombo();
 void BeginBattleLogicFrame();
 void ApplyTutorialModePerks(int steps);
+void PositionTutorialFightersClose();
+#include "tutorial_guide.h"
 
 Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled);
 void DestroyFighters();
@@ -43,6 +50,15 @@ void ResolveFighterBodyOverlap(Fighter& a, Fighter& b);
 
 // Slot-aware clamp: P1 stays left of P2 (Makoto-style solid body).
 void ClampFighterAgainstOpponent(Fighter& self, Fighter& opponent);
+
+// Horizontal gap between pushboxes (0 when touching / overlapping).
+float GetFighterHorizontalGap(const Fighter& a, const Fighter& b);
+
+// True when the attack box would overlap the defender hurtbox right now.
+bool WouldMeleeAttackReach(const Fighter& attacker, const Fighter& defender, const AttackData& data);
+
+// Neutral jab reach — conservative default for CPU spacing.
+bool IsFighterInMeleeStrikeRange(const Fighter& attacker, const Fighter& defender);
 
 // Hard separation after both fighters move — fixes dash cross-through.
 void EnforceFighterGroundSeparation(Fighter& a, Fighter& b);
@@ -75,9 +91,20 @@ bool IsBattleEndSequence();
 bool IsHumanPlayerEngaged();
 void ApplyBattleRenderTints();
 
-// Guard: hold direction away from the opponent (not toward them).
+struct HorizontalMoveInput {
+    bool isMoving = false;
+    float moveDirX = 0.0f;
+    bool leftHeld = false;
+    bool rightHeld = false;
+};
+
+HorizontalMoveInput ReadHorizontalMoveInput();
+// Guard: hold back (away from opponent) + S. Shift = Run, not Guard.
 int GetGuardAwayDirection(const Fighter& self);
 int GetGuardTowardDirection(const Fighter& self);
+bool IsHoldingBackInput(const Fighter& self);
 bool IsHoldingGuardInput(const Fighter& self);
+float ComputeSmoothedLocomotionSpeed(int baseVelocity, bool wantsRun, float& runBlend, int steps);
+bool ShouldUseRunLocomotion(float runBlend);
 bool IsFighterAirborne(const Fighter& self);
 bool TryProcessGuardBlock(Fighter& defender, int rawDamage, int& appliedDamage);

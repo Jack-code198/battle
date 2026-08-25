@@ -57,7 +57,10 @@
     <ClCompile Include="playerSelect.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="menuMain.cpp">
+    <ClCompile Include="tutorial_guide.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MainMenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -107,7 +110,10 @@
     <ClInclude Include="playerSelect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="menuMain.h">
+    <ClInclude Include="tutorial_guide.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MainMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
