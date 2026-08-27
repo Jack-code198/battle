@@ -5,7 +5,8 @@
 SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
-    : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), selectionSound(nullptr),
+    : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), creditsMusic(nullptr),
+      selectionSound(nullptr),
       personaSummonSfx(nullptr), musicChannel(nullptr), currentTrack(nullptr),
       isInitialised(false), isPlaying(false), isMuted(false) {
 }
@@ -51,6 +52,16 @@ bool SoundManager::Initialise() {
         battleTrack = nullptr;
     }
 
+    FMOD::Sound* creditsTrack = nullptr;
+    result = system->createSound(
+        "assets/sound/end_credits_song.mp3",
+        FMOD_LOOP_NORMAL | FMOD_DEFAULT,
+        nullptr,
+        &creditsTrack);
+    if (result != FMOD_OK) {
+        creditsTrack = nullptr;
+    }
+
     FMOD::Sound* selectSfx = nullptr;
     result = system->createSound(
         "assets/sound/selection_sound.mp3",
@@ -86,6 +97,7 @@ bool SoundManager::Initialise() {
     fmodSystem = system;
     menuMusic = menuTrack;
     battleMusic = battleTrack;
+    creditsMusic = creditsTrack;
     selectionSound = selectSfx;
     personaSummonSfx = personaSummon;
     isInitialised = true;
@@ -145,6 +157,16 @@ void SoundManager::PlayBattleMusic() {
 
 void SoundManager::StopBattleMusic() {
     if (currentTrack == battleMusic) {
+        StopCurrentMusic();
+    }
+}
+
+void SoundManager::PlayCreditsMusic() {
+    PlayMusicTrack(creditsMusic);
+}
+
+void SoundManager::StopCreditsMusic() {
+    if (currentTrack == creditsMusic) {
         StopCurrentMusic();
     }
 }
@@ -210,6 +232,11 @@ void SoundManager::Shutdown() {
     if (battleMusic != nullptr) {
         static_cast<FMOD::Sound*>(battleMusic)->release();
         battleMusic = nullptr;
+    }
+
+    if (creditsMusic != nullptr) {
+        static_cast<FMOD::Sound*>(creditsMusic)->release();
+        creditsMusic = nullptr;
     }
 
     if (selectionSound != nullptr) {

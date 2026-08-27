@@ -21,6 +21,24 @@ bool g_ShowDebugHitboxes = false;
 CharacterId g_SelectedP1 = Char_Makoto;
 CharacterId g_SelectedP2 = Char_Joker;
 BattleMode g_SelectedBattleMode = BattleMode::Battle;
+static bool g_TutorialCpuAiEnabled = false;
+
+bool IsTutorialCpuAiEnabled() {
+    return g_TutorialCpuAiEnabled;
+}
+
+bool IsTutorialSandbagMode() {
+    return IsTutorialBattleMode() && !g_TutorialCpuAiEnabled;
+}
+
+void ToggleTutorialCpuAi() {
+    if (!IsTutorialBattleMode()) return;
+    g_TutorialCpuAiEnabled = !g_TutorialCpuAiEnabled;
+}
+
+void ResetTutorialCpuAi() {
+    g_TutorialCpuAiEnabled = false;
+}
 
 bool IsTutorialBattleMode() {
     return g_SelectedBattleMode == BattleMode::Tutorial;
@@ -123,25 +141,13 @@ void ApplyTutorialModePerks(int steps) {
     if (g_Player2) ApplyTutorialPerksForFighter(*g_Player2, steps);
 }
 
-void PositionTutorialFightersClose() {
-    if (!IsTutorialBattleMode() || !g_Player1 || !g_Player2) return;
+void PositionFightersAtDefaultSpawn() {
+    if (!g_Player1 || !g_Player2) return;
 
-    Fighter& p1 = *g_Player1;
-    Fighter& p2 = *g_Player2;
-    p1.facingDirection = 1;
-    p2.facingDirection = -1;
-    p1.position.y = CHARACTER_GROUND_Y;
-    p2.position.y = CHARACTER_GROUND_Y;
-
-    const float scale = GetMakotoDrawScale();
-    const float bodyW = MAKOTO_BODY_WIDTH * scale;
-    const float meleeGap = bodyW + 28.0f * scale;
-
-    p1.position.x = GetMakotoScreenHalfWidth() + MAKOTO_WINDOW_MARGIN + 72.0f;
-    p2.position.x = p1.position.x + meleeGap;
-
-    p1.UpdateScaledHurtbox();
-    p2.UpdateScaledHurtbox();
+    g_Player1->ApplySlotSpawnDefaults();
+    g_Player2->ApplySlotSpawnDefaults();
+    g_Player1->UpdateScaledHurtbox();
+    g_Player2->UpdateScaledHurtbox();
 }
 
 BattleFlowPhase g_BattleFlowPhase = BattleFlowPhase::Countdown;
@@ -192,7 +198,7 @@ void SetupBattleFighters(CharacterId p1Id, CharacterId p2Id) {
     g_SelectedP2 = p2Id;
     g_Player1 = CreateFighter(p1Id, 0, true);
     g_Player2 = CreateFighter(p2Id, 1, false);
-    PositionTutorialFightersClose();
+    ResetTutorialCpuAi();
 }
 
 Fighter* GetOpponent(const Fighter& self) {
@@ -511,7 +517,7 @@ void ResetBattleFlow() {
         g_TutorialRecoverIdleFrames[0] = 0;
         g_TutorialRecoverIdleFrames[1] = 0;
         ResetTutorialGuide();
-        PositionTutorialFightersClose();
+        PositionFightersAtDefaultSpawn();
     }
 }
 

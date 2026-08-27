@@ -1619,7 +1619,7 @@ void Narukami::Update() {
     if (steps <= 0) return;
     if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
-    if (!IsHumanControlled() && IsTutorialBattleMode()) {
+    if (!IsHumanControlled() && IsTutorialSandbagMode()) {
         UpdateSandbag(steps);
         return;
     }
@@ -1996,6 +1996,10 @@ bool Narukami::IsInCombatAction() const {
     default:
         return false;
     }
+}
+
+void Narukami::RememberSpawnAnchor() {
+    spawnPosition = position;
 }
 
 void Narukami::Reset() {

@@ -15,10 +15,11 @@ static bool g_MenuDownHeld = false;
 static bool g_MenuEnterHeld = false;
 static bool g_MenuClickHeld = false;
 
-static const int MENU_OPTION_COUNT = 3;
+static const int MENU_OPTION_COUNT = 4;
 static const char* g_MenuOptions[MENU_OPTION_COUNT] = {
     "Start Game",
     "Options",
+    "Credits",
     "Exit"
 };
 
@@ -244,6 +245,18 @@ void renderMainMenu() {
     spriteBrush->End();
 }
 
+void renderMainMenuBackdrop() {
+    if (!spriteBrush) return;
+
+    if (!menuBackground) {
+        LoadMenuTextures();
+    }
+
+    spriteBrush->Begin(D3DXSPRITE_ALPHABLEND);
+    DrawFullscreenBackground();
+    spriteBrush->End();
+}
+
 static void ConfirmMenuSelection(int& choice) {
     g_SoundManager.PlaySelectionSound();
     switch (currentSelection) {
@@ -254,6 +267,9 @@ static void ConfirmMenuSelection(int& choice) {
         choice = 2;
         break;
     case 2:
+        choice = 3;
+        break;
+    case 3:
         PostQuitMessage(0);
         break;
     }

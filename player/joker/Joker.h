@@ -125,6 +125,7 @@ public:
     void TakeDamage(int damage) override;
     void ApplySkillDamage(int damage) override;
     void Reset() override;
+    void RememberSpawnAnchor() override;
 
     void BeginVictoryPose() override;
     void BeginDefeatPose() override;

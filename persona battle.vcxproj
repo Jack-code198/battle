@@ -198,6 +198,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
   <ItemGroup>
     <ClCompile Include="tutorial_guide.cpp" />
     <ClCompile Include="MainMenu.cpp" />
+    <ClCompile Include="creditsScreen.cpp" />
     <ClCompile Include="optionsMenu.cpp" />
     <ClCompile Include="pauseMenu.cpp" />
     <ClCompile Include="player\Fighter.cpp" />
@@ -213,6 +214,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClCompile Include="game_logic.cpp" />
     <ClCompile Include="input.cpp" />
     <ClCompile Include="ai.cpp" />
+    <ClCompile Include="battleBackground.cpp" />
     <ClCompile Include="FontRenderer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="renderer.cpp" />
@@ -220,6 +222,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
   <ItemGroup>
     <ClInclude Include="tutorial_guide.h" />
     <ClInclude Include="MainMenu.h" />
+    <ClInclude Include="creditsScreen.h" />
     <ClInclude Include="optionsMenu.h" />
     <ClInclude Include="pauseMenu.h" />
     <ClInclude Include="player\Fighter.h" />
@@ -240,6 +243,7 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
     <ClInclude Include="game_logic.h" />
     <ClInclude Include="input.h" />
     <ClInclude Include="ai.h" />
+    <ClInclude Include="battleBackground.h" />
     <ClInclude Include="renderer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

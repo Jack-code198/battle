@@ -358,12 +358,18 @@ inline constexpr int BATTLE_COUNTDOWN_DIGIT_STEPS = 55;
 inline constexpr int BATTLE_COUNTDOWN_FIGHT_STEPS = 40;
 inline constexpr int BATTLE_KO_HOLD_STEPS = 70;
 // Win/lose poses stay on screen after the KO banner until fade begins.
-inline constexpr int BATTLE_RESULT_POSE_MIN_STEPS = 360;
-inline constexpr int BATTLE_FADE_OUT_STEPS = 180;
+inline constexpr int BATTLE_RESULT_POSE_MIN_STEPS = 150;
+inline constexpr int BATTLE_FADE_OUT_STEPS = 54;
 // Keep full black on screen briefly before leaving the battle scene.
-inline constexpr int BATTLE_FINISHED_BLACK_HOLD_STEPS = 60;
+inline constexpr int BATTLE_FINISHED_BLACK_HOLD_STEPS = 18;
 inline constexpr int BATTLE_WIN_ANIM_TICKS = 10;
 inline constexpr int BATTLE_LOSE_ANIM_TICKS = 10;
+
+// Layered battle background parallax (human fighter movement).
+inline constexpr int BATTLE_PARALLAX_MAX_LAYERS = 8;
+inline constexpr int BATTLE_PARALLAX_LOOP_COPIES = 3;
+inline constexpr float BATTLE_PARALLAX_SENSITIVITY = 0.38f;
+inline constexpr float BATTLE_PARALLAX_LERP = 0.16f;
 
 // Battle mode round timer (logic steps @ ~60Hz). Tutorial mode has no limit.
 inline constexpr int BATTLE_ROUND_TIME_SECONDS = 99;

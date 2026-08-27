@@ -13,7 +13,8 @@ void CleanUpPauseMenuTextures();
 void NotifyPauseMenuDeviceLost();
 void NotifyPauseMenuDeviceReset();
 
-// choice: 0 = browsing, 1 = Resume, 2 = Move List, 3 = Options, 4 = Player Select, 5 = Exit to main menu
+// choice: 0 = browsing; battle: 1=Resume, 2=Move List, 3=Options, 4=Player Select, 5=Exit
+// tutorial adds AI toggle (handled in-menu, choice 4 unused) and shifts 4=Player Select, 5=Exit, 6=Exit mapping
 void pauseMenuScreen(int& choice);
 void ResetPauseMenuInputState();
 

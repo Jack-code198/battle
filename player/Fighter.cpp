@@ -75,7 +75,7 @@ bool Fighter::CanReceiveHit() const {
         return false;
     }
     // Tutorial sandbag stays hittable so training combos / skills always register.
-    if (IsTutorialBattleMode() && !humanControlled) {
+    if (IsTutorialSandbagMode() && !humanControlled) {
         return true;
     }
     return !IsInKnockdownReaction();

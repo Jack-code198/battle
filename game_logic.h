@@ -25,6 +25,10 @@ enum class BattleMode {
 
 extern BattleMode g_SelectedBattleMode;
 bool IsTutorialBattleMode();
+bool IsTutorialSandbagMode();
+bool IsTutorialCpuAiEnabled();
+void ToggleTutorialCpuAi();
+void ResetTutorialCpuAi();
 bool ShouldFighterDieOnZeroHealth();
 void DealMeleeHit(Fighter& attacker, Fighter& defender, int damage);
 void DealSkillHit(Fighter& attacker, Fighter& defender, int damage);
@@ -32,7 +36,7 @@ void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage);
 int GetP1HitCombo();
 void BeginBattleLogicFrame();
 void ApplyTutorialModePerks(int steps);
-void PositionTutorialFightersClose();
+void PositionFightersAtDefaultSpawn();
 #include "tutorial_guide.h"
 
 Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled);

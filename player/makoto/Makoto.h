@@ -120,6 +120,7 @@ public:
     void Render(LPD3DXSPRITE sprite) override;
     void TakeDamage(int damage) override;
     void Reset() override;
+    void RememberSpawnAnchor() override;
 
     void BeginVictoryPose() override;
     void BeginDefeatPose() override;

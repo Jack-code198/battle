@@ -129,4 +129,5 @@ public:
 
     // Slot-aware spawn helpers used by Reset implementations.
     void ApplySlotSpawnDefaults();
+    virtual void RememberSpawnAnchor() {}
 };

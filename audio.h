@@ -18,6 +18,8 @@ public:
     void StopMenuMusic();
     void PlayBattleMusic();
     void StopBattleMusic();
+    void PlayCreditsMusic();
+    void StopCreditsMusic();
     void PlaySelectionSound();
     void PlayPersonaSummonSfx(float volume = PERSONA_SUMMON_SFX_VOLUME);
     void ToggleMusicMute();
@@ -32,6 +34,7 @@ private:
     void* fmodSystem;
     void* menuMusic;
     void* battleMusic;
+    void* creditsMusic;
     void* selectionSound;
     void* personaSummonSfx;
     void* musicChannel;

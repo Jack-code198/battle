@@ -10,7 +10,8 @@ enum class AppScreen {
     Battle,
     Pause,
     MoveList,
-    GameOver
+    GameOver,
+    Credits
 };
 
 class GameStateStack {

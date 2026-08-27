@@ -19,14 +19,12 @@ static bool g_PauseEnterHeld = false;
 static bool g_PauseEscHeld = false;
 static bool g_PauseClickHeld = false;
 
-static const int PAUSE_OPTION_COUNT = 5;
-static const int PAUSE_RESUME = 0;
-static const int PAUSE_MOVELIST = 1;
-static const int PAUSE_OPTIONS = 2;
-static const int PAUSE_PLAYER_SELECT = 3;
-static const int PAUSE_EXIT = 4;
+static const int PAUSE_MAX_OPTIONS = 6;
+static const int PAUSE_BATTLE_OPTION_COUNT = 5;
+static const int PAUSE_TUTORIAL_OPTION_COUNT = 6;
+static const int PAUSE_AI_TOGGLE_INDEX = 3;
 
-static const char* g_PauseOptions[PAUSE_OPTION_COUNT] = {
+static const char* g_PauseBattleOptions[PAUSE_BATTLE_OPTION_COUNT] = {
     "Resume",
     "Move List",
     "Options",
@@ -34,7 +32,7 @@ static const char* g_PauseOptions[PAUSE_OPTION_COUNT] = {
     "Exit to Main Menu"
 };
 
-static RECT g_PauseItemRects[PAUSE_OPTION_COUNT] = {};
+static RECT g_PauseItemRects[PAUSE_MAX_OPTIONS] = {};
 static int g_LastHoveredPauseOption = -1;
 
 // --- Move list state ---
@@ -68,7 +66,7 @@ static const D3DCOLOR PAUSE_COLOR_MUTED = D3DCOLOR_XRGB(180, 180, 180);
 
 // Panel is intentionally small/centered so the battle stays visible behind it.
 static const float PAUSE_PANEL_WIDTH = 420.0f;
-static const float PAUSE_PANEL_HEIGHT = 400.0f;
+static const float PAUSE_PANEL_HEIGHT = 450.0f;
 static const float PAUSE_FRAME_THICKNESS = 2.0f;
 static const LONG PAUSE_TITLE_HEIGHT = 60;
 static const int PAUSE_ITEM_HEIGHT = 46;
@@ -283,6 +281,44 @@ void NotifyPauseMenuDeviceReset() {
     if (g_PauseTableFont) g_PauseTableFont->OnResetDevice();
 }
 
+static int GetPauseOptionCount() {
+    return IsTutorialBattleMode() ? PAUSE_TUTORIAL_OPTION_COUNT : PAUSE_BATTLE_OPTION_COUNT;
+}
+
+static void GetPauseOptionLabel(int index, char* outText, int outSize) {
+    if (!outText || outSize <= 0) return;
+
+    if (IsTutorialBattleMode()) {
+        switch (index) {
+        case 0: sprintf_s(outText, outSize, "Resume"); return;
+        case 1: sprintf_s(outText, outSize, "Move List"); return;
+        case 2: sprintf_s(outText, outSize, "Options"); return;
+        case 3:
+            sprintf_s(outText, outSize, IsTutorialCpuAiEnabled() ? "AI: On" : "AI: Off");
+            return;
+        case 4: sprintf_s(outText, outSize, "Player Select"); return;
+        case 5: sprintf_s(outText, outSize, "Exit to Main Menu"); return;
+        default: outText[0] = '\0'; return;
+        }
+    }
+
+    if (index >= 0 && index < PAUSE_BATTLE_OPTION_COUNT) {
+        sprintf_s(outText, outSize, "%s", g_PauseBattleOptions[index]);
+    }
+    else {
+        outText[0] = '\0';
+    }
+}
+
+static int MapPauseSelectionToChoice(int selection) {
+    if (IsTutorialBattleMode()) {
+        if (selection == PAUSE_AI_TOGGLE_INDEX) return 4;
+        if (selection == 4) return 5;
+        if (selection == 5) return 6;
+    }
+    return selection + 1;
+}
+
 static void GetPausePanelOrigin(float& left, float& top) {
     left = ((float)SCREEN_WIDTH - PAUSE_PANEL_WIDTH) * 0.5f;
     top = ((float)SCREEN_HEIGHT - PAUSE_PANEL_HEIGHT) * 0.5f;
@@ -295,8 +331,9 @@ static void UpdatePauseItemRects() {
     const LONG listTop = (LONG)panelTop + PAUSE_TITLE_HEIGHT;
     const LONG left = (LONG)panelLeft + 30;
     const LONG right = (LONG)(panelLeft + PAUSE_PANEL_WIDTH) - 30;
+    const int optionCount = GetPauseOptionCount();
 
-    for (int i = 0; i < PAUSE_OPTION_COUNT; i++) {
+    for (int i = 0; i < optionCount; i++) {
         g_PauseItemRects[i].left = left;
         g_PauseItemRects[i].top = listTop + (i * PAUSE_ITEM_SPACING);
         g_PauseItemRects[i].right = right;
@@ -324,6 +361,11 @@ void pauseMenuScreen(int& choice) {
     }
     if (!spriteBrush) return;
 
+    const int optionCount = GetPauseOptionCount();
+    if (g_PauseSelection >= optionCount) {
+        g_PauseSelection = 0;
+    }
+
     // --- Input ---
     UpdatePauseItemRects();
 
@@ -337,7 +379,7 @@ void pauseMenuScreen(int& choice) {
     bool hasCursor = GetGameCursorPos(cursorPt);
     int hoveredOption = -1;
     if (hasCursor) {
-        for (int i = 0; i < PAUSE_OPTION_COUNT; i++) {
+        for (int i = 0; i < optionCount; i++) {
             if (PtInRect(&g_PauseItemRects[i], cursorPt)) {
                 hoveredOption = i;
                 g_PauseSelection = i;
@@ -354,11 +396,11 @@ void pauseMenuScreen(int& choice) {
     }
 
     if (upPressed && !g_PauseUpHeld) {
-        g_PauseSelection = (g_PauseSelection - 1 + PAUSE_OPTION_COUNT) % PAUSE_OPTION_COUNT;
+        g_PauseSelection = (g_PauseSelection - 1 + optionCount) % optionCount;
         g_SoundManager.PlaySelectionSound();
     }
     if (downPressed && !g_PauseDownHeld) {
-        g_PauseSelection = (g_PauseSelection + 1) % PAUSE_OPTION_COUNT;
+        g_PauseSelection = (g_PauseSelection + 1) % optionCount;
         g_SoundManager.PlaySelectionSound();
     }
     g_PauseUpHeld = upPressed;
@@ -366,21 +408,43 @@ void pauseMenuScreen(int& choice) {
 
     if (enterPressed && !g_PauseEnterHeld) {
         g_SoundManager.PlaySelectionSound();
-        choice = g_PauseSelection + 1; // 1=Resume, 2=MoveList, 3=Options, 4=PlayerSelect, 5=Exit
+        if (IsTutorialBattleMode() && g_PauseSelection == PAUSE_AI_TOGGLE_INDEX) {
+            ToggleTutorialCpuAi();
+            if (IsTutorialSandbagMode() && g_Player2) {
+                g_Player2->ApplySlotSpawnDefaults();
+                g_Player2->RememberSpawnAnchor();
+                g_Player2->UpdateScaledHurtbox();
+            }
+            choice = 0;
+        }
+        else {
+            choice = MapPauseSelectionToChoice(g_PauseSelection);
+        }
     }
     g_PauseEnterHeld = enterPressed;
 
     // Esc while paused resumes, mirroring the Esc that opened the menu.
     if (escPressed && !g_PauseEscHeld) {
         g_SoundManager.PlaySelectionSound();
-        choice = PAUSE_RESUME + 1;
+        choice = 1;
     }
     g_PauseEscHeld = escPressed;
 
     if (clickPressed && !g_PauseClickHeld && hoveredOption >= 0) {
         g_PauseSelection = hoveredOption;
         g_SoundManager.PlaySelectionSound();
-        choice = g_PauseSelection + 1;
+        if (IsTutorialBattleMode() && g_PauseSelection == PAUSE_AI_TOGGLE_INDEX) {
+            ToggleTutorialCpuAi();
+            if (IsTutorialSandbagMode() && g_Player2) {
+                g_Player2->ApplySlotSpawnDefaults();
+                g_Player2->RememberSpawnAnchor();
+                g_Player2->UpdateScaledHurtbox();
+            }
+            choice = 0;
+        }
+        else {
+            choice = MapPauseSelectionToChoice(g_PauseSelection);
+        }
     }
     g_PauseClickHeld = clickPressed;
 
@@ -402,11 +466,13 @@ void pauseMenuScreen(int& choice) {
     }
 
     if (g_PauseItemFont) {
-        for (int i = 0; i < PAUSE_OPTION_COUNT; i++) {
+        char optionLabel[48] = {};
+        for (int i = 0; i < optionCount; i++) {
+            GetPauseOptionLabel(i, optionLabel, (int)sizeof(optionLabel));
             const D3DCOLOR textColor = (i == g_PauseSelection) ? PAUSE_COLOR_SELECTED : PAUSE_COLOR_NORMAL;
             g_PauseItemFont->DrawTextA(
                 spriteBrush,
-                g_PauseOptions[i],
+                optionLabel,
                 -1,
                 &g_PauseItemRects[i],
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,

@@ -6,6 +6,7 @@
 #include "pauseMenu.h"
 #include "MainMenu.h"
 #include "stageSelect.h"
+#include "battleBackground.h"
 #include "playerSelect.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
@@ -240,22 +241,8 @@ void RenderBattleSceneContents() {
         (g_Player1 && g_Player1->IsSuperMoveActive()) ||
         (g_Player2 && g_Player2->IsSuperMoveActive());
 
-    if (texBgCity1 && !ultimateActive) {
-        D3DSURFACE_DESC desc;
-        texBgCity1->GetLevelDesc(0, &desc);
-        float scaleX = (float)SCREEN_WIDTH / (float)desc.Width;
-        float scaleY = (float)SCREEN_HEIGHT / (float)desc.Height;
-
-        D3DXMATRIX matScale;
-        D3DXMatrixScaling(&matScale, scaleX, scaleY, 1.0f);
-        spriteBrush->SetTransform(&matScale);
-
-        D3DXVECTOR3 bgPos(0.0f, 0.0f, 0.0f);
-        spriteBrush->Draw(texBgCity1, NULL, NULL, &bgPos, D3DCOLOR_XRGB(255, 255, 255));
-
-        D3DXMATRIX matIdentity;
-        D3DXMatrixIdentity(&matIdentity);
-        spriteBrush->SetTransform(&matIdentity);
+    if (!ultimateActive) {
+        DrawBattleParallaxBackground(spriteBrush);
     }
     else if (ultimateActive) {
         DrawDebugRect(
@@ -370,7 +357,12 @@ void WarmupRenderPipeline() {
 
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
-        if (texBgCity1 && spriteBrush) {
+        if (spriteBrush && BattleParallaxBackgroundReady()) {
+            spriteBrush->Begin(D3DXSPRITE_ALPHABLEND);
+            DrawBattleParallaxBackground(spriteBrush);
+            spriteBrush->End();
+        }
+        else if (texBgCity1 && spriteBrush) {
             D3DSURFACE_DESC desc;
             texBgCity1->GetLevelDesc(0, &desc);
             if (desc.Width > 0 && desc.Height > 0) {
@@ -399,6 +391,8 @@ void CleanUpD3D() {
     CleanUpNarukamiTextures();
     CleanUpYosukeTextures();
     CleanUpHudTextures();
+
+    CleanUpBattleParallax();
 
     if (texBgCity1) { texBgCity1->Release(); texBgCity1 = NULL; }
 

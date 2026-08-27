@@ -733,7 +733,7 @@ void Makoto::Update() {
     if (steps <= 0) return;
     if (steps > GAME_TIMER_MAX_STEPS_PER_FRAME) steps = GAME_TIMER_MAX_STEPS_PER_FRAME;
 
-    if (!IsHumanControlled() && IsTutorialBattleMode()) {
+    if (!IsHumanControlled() && IsTutorialSandbagMode()) {
         UpdateSandbag(steps);
         return;
     }
@@ -1882,6 +1882,10 @@ void Makoto::HoldGuardState(bool airborne) {
     maxFrame = GetMaxFrameForState(target);
     if (maxFrame < 1) maxFrame = 1;
     hitThisAttack = false;
+}
+
+void Makoto::RememberSpawnAnchor() {
+    originalPosition = position;
 }
 
 void Makoto::Reset() {

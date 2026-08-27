@@ -1,4 +1,5 @@
 #include "stageSelect.h"
+#include "battleBackground.h"
 #include "input.h"
 #include "audio.h"
 #include <cstdio>
@@ -7,7 +8,6 @@ StageInfo g_Stages[] = {
     { "Stage 1", "assets/background/City3/City3.png", NULL },
     { "Stage 2", "assets/background/City4/City4.png", NULL },
     { "Stage 3", "assets/background/City2/City2.png", NULL },
-    { "Stage 4", "assets/background/City1/City1.png", NULL },
 };
 const int STAGE_COUNT = sizeof(g_Stages) / sizeof(g_Stages[0]);
 
@@ -141,6 +141,8 @@ bool LoadStageTextures() {
 }
 
 void CleanUpStageTextures() {
+    CleanUpBattleParallax();
+
     for (int i = 0; i < STAGE_COUNT; i++) {
         if (g_Stages[i].texture) {
             if (texBgCity1 == g_Stages[i].texture) {
@@ -188,8 +190,14 @@ void NotifyStageDeviceReset() {
 }
 
 void ApplySelectedStageToBattle() {
+    if (g_SelectedStageIndex >= STAGE_COUNT) {
+        g_SelectedStageIndex = 0;
+    }
     if (g_SelectedStageIndex >= 0 && g_SelectedStageIndex < STAGE_COUNT) {
         texBgCity1 = g_Stages[g_SelectedStageIndex].texture;
+        if (!LoadBattleParallaxForStage(g_SelectedStageIndex)) {
+            // Fall back to the composite preview texture if layer load fails.
+        }
     }
 }
 

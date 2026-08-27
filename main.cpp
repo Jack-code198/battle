@@ -20,6 +20,8 @@
 #include "physics.h"
 #include "FontRenderer.h"
 #include "GameStateStack.h"
+#include "battleBackground.h"
+#include "creditsScreen.h"
 
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
@@ -56,6 +58,7 @@ static GameStateStack g_StateStack;
 static FontRenderer g_FontRenderer;
 static int menuChoice = 0;
 static int optionsChoice = 0;
+static int creditsChoice = 0;
 static int pauseChoice = 0;
 static int moveListChoice = 0;
 static int playerSelectChoice = 0;
@@ -141,6 +144,20 @@ static void RenderOptionsScreen() {
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
         optionsMenuScreen(optionsChoice);
+        ApplyBrightnessOverlay();
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderCreditsScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        creditsScreen(creditsChoice);
         ApplyBrightnessOverlay();
         g_pD3DDevice->EndScene();
     }
@@ -252,6 +269,7 @@ static void FinishPendingBattleSetup() {
     if (IsTutorialBattleMode()) {
         ResetTutorialGuide();
     }
+    ResetBattleParallaxScroll();
     g_GameTimer.Reset();
     g_BattleSetupPending = false;
 }
@@ -380,7 +398,27 @@ int main(int argc, char* argv[]) {
                 optionsChoice = 0;
                 ResetOptionsMenuInputState();
             }
+            else if (menuChoice == 3) {
+                g_SoundManager.StopMenuMusic();
+                g_SoundManager.PlayCreditsMusic();
+                ResetCreditsScreen();
+                g_StateStack.Push(AppScreen::Credits);
+                creditsChoice = 0;
+            }
             menuChoice = 0;
+            break;
+        }
+        case AppScreen::Credits: {
+            SetMenuCursorEnabled(true);
+            RenderCreditsScreen();
+
+            if (creditsChoice == 2) {
+                g_StateStack.Pop();
+                g_SoundManager.StopCreditsMusic();
+                g_SoundManager.PlayMenuMusic();
+                ResetMenuInputState();
+            }
+            creditsChoice = 0;
             break;
         }
         case AppScreen::Options: {
@@ -443,6 +481,7 @@ int main(int argc, char* argv[]) {
                 ResolveFighterBodyOverlap(*g_Player1, *g_Player2);
             }
             UpdateBattleFlow();
+            UpdateBattleParallaxScroll();
             EnsureBattleResultPosesApplied();
             Render();
             CheckBattleGameOver();
@@ -480,16 +519,39 @@ int main(int argc, char* argv[]) {
                 ResetOptionsMenuInputState();
                 break;
             case 4:
-                g_SoundManager.StopBattleMusic();
-                g_SoundManager.PlayMenuMusic();
-                SetMenuCursorEnabled(true);
-                DestroyFighters();
-                ResetBattleFlow();
-                ResetPlayerSelectInputState();
-                playerSelectChoice = 0;
-                g_StateStack.ReturnToPlayerSelect();
+                // Tutorial AI toggle is handled inside pauseMenuScreen (choice stays 0).
+                if (!IsTutorialBattleMode()) {
+                    g_SoundManager.StopBattleMusic();
+                    g_SoundManager.PlayMenuMusic();
+                    SetMenuCursorEnabled(true);
+                    DestroyFighters();
+                    ResetBattleFlow();
+                    ResetPlayerSelectInputState();
+                    playerSelectChoice = 0;
+                    g_StateStack.ReturnToPlayerSelect();
+                }
                 break;
             case 5:
+                if (IsTutorialBattleMode()) {
+                    g_SoundManager.StopBattleMusic();
+                    g_SoundManager.PlayMenuMusic();
+                    SetMenuCursorEnabled(true);
+                    DestroyFighters();
+                    ResetBattleFlow();
+                    ResetPlayerSelectInputState();
+                    playerSelectChoice = 0;
+                    g_StateStack.ReturnToPlayerSelect();
+                }
+                else {
+                    g_SoundManager.StopBattleMusic();
+                    g_SoundManager.PlayMenuMusic();
+                    SetMenuCursorEnabled(true);
+                    ResetMenuInputState();
+                    menuChoice = 0;
+                    g_StateStack.ReturnToMainMenu();
+                }
+                break;
+            case 6:
                 g_SoundManager.StopBattleMusic();
                 g_SoundManager.PlayMenuMusic();
                 SetMenuCursorEnabled(true);
@@ -521,7 +583,7 @@ int main(int argc, char* argv[]) {
             if (retryPressed && !g_GameOverRetryHeld) {
                 if (g_Player1) g_Player1->Reset();
                 if (g_Player2) g_Player2->Reset();
-                PositionTutorialFightersClose();
+                PositionFightersAtDefaultSpawn();
                 if (g_Player1 && g_Player2) {
                     ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
                 }
