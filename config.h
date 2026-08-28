@@ -6,11 +6,22 @@
 #include <d3dx9.h>
 #include <dinput.h>
 #include <cmath>
+#include <cstdio>
 
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")
 
 #include "collision.h"
+
+inline void LogCollisionDetected(const char* detail) {
+    if (!detail || !detail[0]) {
+        printf("Collision detected\n");
+    }
+    else {
+        printf("Collision detected: %s\n", detail);
+    }
+    fflush(stdout);
+}
 
 // window / screen
 extern HWND g_hWnd;
@@ -974,6 +985,20 @@ inline constexpr float ATK_DOWN_HEIGHT = 32.0f;
 
 void DrawDebugRect(LPD3DXSPRITE sprite, float x, float y, float w, float h, D3DCOLOR color);
 void DrawDebugCircleRing(LPD3DXSPRITE sprite, float cx, float cy, float radius, D3DCOLOR color, int segments = 48);
+
+// Main-menu physics demo (Jonathan): two colliding balls with force-based movement.
+inline constexpr const char* BALL1_ICON_PATH = "assets/background/persona5Icon.png";
+inline constexpr const char* BALL2_ICON_PATH = "assets/background/persona4Icon.png";
+inline constexpr const char* BALL_COLLISION_SOUND = "assets/sound/ball_collision_sound.wav";
+inline constexpr float BALL_RADIUS = 64.0f;
+inline constexpr float BALL_DISPLAY_SIZE = 128.0f;
+inline constexpr float BALL_FRICTION = 0.98f;
+inline constexpr float BALL_ENGINE_POWER = 1.0f;
+inline constexpr float BALL_ROTATION_SPEED = 0.1f;
+inline constexpr float BALL_RESTITUTION = 0.8f;
+inline constexpr float BALL_1_MASS = 1.0f;
+inline constexpr float BALL_2_MASS = 1.0f;
+inline constexpr D3DCOLOR BALL_FALLBACK_COLOR = D3DCOLOR_ARGB(255, 255, 210, 64);
 
 // Shared melee AttackData instances (defined in main.cpp).
 extern AttackData attackHitbox;

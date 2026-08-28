@@ -198,6 +198,8 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
   <ItemGroup>
     <ClCompile Include="tutorial_guide.cpp" />
     <ClCompile Include="MainMenu.cpp" />
+    <ClCompile Include="Ball.cpp" />
+    <ClCompile Include="miniGame.cpp" />
     <ClCompile Include="creditsScreen.cpp" />
     <ClCompile Include="optionsMenu.cpp" />
     <ClCompile Include="pauseMenu.cpp" />
@@ -222,6 +224,8 @@ xcopy /E /I /Y /D "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
   <ItemGroup>
     <ClInclude Include="tutorial_guide.h" />
     <ClInclude Include="MainMenu.h" />
+    <ClInclude Include="Ball.h" />
+    <ClInclude Include="miniGame.h" />
     <ClInclude Include="creditsScreen.h" />
     <ClInclude Include="optionsMenu.h" />
     <ClInclude Include="pauseMenu.h" />

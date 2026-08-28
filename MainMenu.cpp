@@ -15,9 +15,10 @@ static bool g_MenuDownHeld = false;
 static bool g_MenuEnterHeld = false;
 static bool g_MenuClickHeld = false;
 
-static const int MENU_OPTION_COUNT = 4;
+static const int MENU_OPTION_COUNT = 5;
 static const char* g_MenuOptions[MENU_OPTION_COUNT] = {
     "Start Game",
+    "Mini Game",
     "Options",
     "Credits",
     "Exit"
@@ -35,7 +36,6 @@ static const int MENU_TITLE_LINE_HEIGHT = 56;
 static const int MENU_TOP_MARGIN = MENU_TITLE_TOP + (MENU_TITLE_LINE_HEIGHT * 2) + 20;
 
 static HRESULT CreateUiFont(const char* familyName, INT height, BOOL italic, ID3DXFont** outFont) {
-    // ClearType on a saturated red background looks muddy; antialias stays sharper.
     return D3DXCreateFontA(
         g_pD3DDevice,
         height,
@@ -81,7 +81,6 @@ static bool LoadMenuFont() {
     }
 
     bool ok = true;
-    // Title stays upright/aligned; italic only leans letters to the right.
     if (!LoadOrCreateUiFont(GAMETITLE_FONT_FAMILY, 56, TRUE, &titleFont)) ok = false;
     if (!LoadOrCreateUiFont(MAINMENU_FONT_FAMILY, 34, FALSE, &menuFont)) ok = false;
     return ok;
@@ -91,7 +90,6 @@ bool LoadMenuTextures() {
     bool ok = true;
 
     if (menuBackground == NULL) {
-        // File on disk is MainMenu.jpg (user-facing name may say .png).
         HRESULT hr = D3DXCreateTextureFromFileEx(
             g_pD3DDevice,
             "assets/background/MainMenu.jpg",
@@ -220,7 +218,6 @@ void drawMenuOptions() {
     UpdateOptionRects();
 
     for (int i = 0; i < MENU_OPTION_COUNT; i++) {
-        // Same as old yellow highlight: selected text color changes (now black).
         const D3DCOLOR textColor = (i == currentSelection)
             ? D3DCOLOR_XRGB(0, 0, 0)
             : D3DCOLOR_XRGB(255, 255, 255);
@@ -270,6 +267,9 @@ static void ConfirmMenuSelection(int& choice) {
         choice = 3;
         break;
     case 3:
+        choice = 4;
+        break;
+    case 4:
         PostQuitMessage(0);
         break;
     }
@@ -278,13 +278,13 @@ static void ConfirmMenuSelection(int& choice) {
 static void UpdateMenuInput(int& choice) {
     UpdateOptionRects();
 
-    bool upPressed = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    bool downPressed = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-    bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+    const bool upPressed = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
+    const bool downPressed = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
+    const bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
+    const bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
-    bool hasCursor = GetGameCursorPos(cursorPt);
+    const bool hasCursor = GetGameCursorPos(cursorPt);
     int hoveredOption = -1;
     if (hasCursor) {
         for (int i = 0; i < MENU_OPTION_COUNT; i++) {

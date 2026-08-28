@@ -58,12 +58,14 @@ int GetP1HitCombo() {
 
 void DealMeleeHit(Fighter& attacker, Fighter& defender, int damage) {
     g_DamageAttacker = &attacker;
+    LogCollisionDetected("fighter attack hit");
     defender.TakeDamage(damage);
     g_DamageAttacker = nullptr;
 }
 
 void DealSkillHit(Fighter& attacker, Fighter& defender, int damage) {
     g_DamageAttacker = &attacker;
+    LogCollisionDetected("fighter skill hit");
     defender.ApplySkillDamage(damage);
     g_DamageAttacker = nullptr;
 }
@@ -392,7 +394,12 @@ static void EnforceFighterSideOrder(Fighter& a, Fighter& b) {
 void ResolveFighterBodyOverlap(Fighter& a, Fighter& b) {
     const AABB boxA = a.GetBodyCollisionBox();
     const AABB boxB = b.GetBodyCollisionBox();
+    static bool s_LoggedBodyOverlap = false;
     if (CollisionHelper::AABBIntersect(boxA, boxB)) {
+        if (!s_LoggedBodyOverlap) {
+            LogCollisionDetected("fighter body overlap");
+            s_LoggedBodyOverlap = true;
+        }
         const float overlapLeft = (boxA.x + boxA.width) - boxB.x;
         const float overlapRight = (boxB.x + boxB.width) - boxA.x;
         if (overlapLeft > 0.0f || overlapRight > 0.0f) {
@@ -443,6 +450,9 @@ void ResolveFighterBodyOverlap(Fighter& a, Fighter& b) {
             a.UpdateScaledHurtbox();
             b.UpdateScaledHurtbox();
         }
+    }
+    else {
+        s_LoggedBodyOverlap = false;
     }
 
     EnforceFighterSideOrder(a, b);

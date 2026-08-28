@@ -22,6 +22,7 @@
 #include "GameStateStack.h"
 #include "battleBackground.h"
 #include "creditsScreen.h"
+#include "miniGame.h"
 
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
@@ -59,6 +60,7 @@ static FontRenderer g_FontRenderer;
 static int menuChoice = 0;
 static int optionsChoice = 0;
 static int creditsChoice = 0;
+static int miniGameChoice = 0;
 static int pauseChoice = 0;
 static int moveListChoice = 0;
 static int playerSelectChoice = 0;
@@ -72,16 +74,6 @@ static PhysicsBody g_PhysicsDemo;
 
 // --- Collision detection sample (AABB + OBB + overlap response + frame-miss sweep) ---
 static bool g_CollisionSystemsReady = false;
-
-static bool WantsDebugConsole(int argc, char* argv[]) {
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--console") == 0 ||
-            strcmp(argv[i], "--collision-test") == 0) {
-            return true;
-        }
-    }
-    return false;
-}
 
 static void TryAttachDebugConsole() {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -101,9 +93,10 @@ static void PrintCollisionSelfTestReport(const CollisionSelfTestReport& report) 
     printf("[Collision] Overlap resolve ....... %s\n", report.overlapResolved ? "PASS" : "FAIL");
     printf("[Collision] Overall ............... %s\n", report.AllPassed() ? "PASS" : "FAIL");
     printf("[Battle debug] Press B to toggle hitboxes. Press H to heal (tutorial mode only).\n");
+    printf("[Collision debug] Ball + fighter collisions log here as \"Collision detected\".\n");
 }
 
-static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device, bool printToConsole) {
+static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     // Font / FontRenderer
     BindGameFontRenderer(&g_FontRenderer);
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
@@ -117,9 +110,7 @@ static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device, bool printToConsole
     // Collision detection (AABB / OBB / swept / overlap) — wired from int main.
     const CollisionSelfTestReport collisionReport = RunCollisionModuleSelfTest();
     g_CollisionSystemsReady = collisionReport.AllPassed();
-    if (printToConsole) {
-        PrintCollisionSelfTestReport(collisionReport);
-    }
+    PrintCollisionSelfTestReport(collisionReport);
     return g_CollisionSystemsReady;
 }
 
@@ -158,6 +149,20 @@ static void RenderCreditsScreen() {
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
         creditsScreen(creditsChoice);
+        ApplyBrightnessOverlay();
+        g_pD3DDevice->EndScene();
+    }
+
+    g_pD3DDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+static void RenderMiniGameScreen() {
+    if (!g_pD3DDevice) return;
+
+    g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+
+    if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        miniGameScreen(miniGameChoice);
         ApplyBrightnessOverlay();
         g_pD3DDevice->EndScene();
     }
@@ -289,9 +294,12 @@ static void CheckBattleGameOver() {
 
 // Entry point (BMCS2224): int main — game loop, font, collision, physics, state stack.
 int main(int argc, char* argv[]) {
-    const bool wantsConsole = WantsDebugConsole(argc, argv);
     const bool collisionTestOnly = (argc >= 2 && strcmp(argv[1], "--collision-test") == 0);
-    if (wantsConsole) {
+    if (!collisionTestOnly) {
+        TryAttachDebugConsole();
+        printf("Persona Battle debug console ready.\n");
+    }
+    else {
         TryAttachDebugConsole();
     }
 
@@ -314,7 +322,7 @@ int main(int argc, char* argv[]) {
     D3DXCreateSprite(g_pD3DDevice, &spriteBrush);
 
     // Wire requirement systems so markers are live from main.
-    InitRequirementSystems(g_pD3DDevice, wantsConsole);
+    InitRequirementSystems(g_pD3DDevice);
 
     if (!LoadMakotoTextures()) {
         return 0;
@@ -394,11 +402,17 @@ int main(int argc, char* argv[]) {
                 ResetPlayerSelectInputState();
             }
             else if (menuChoice == 2) {
+                LoadMiniGameAssets();
+                ResetMiniGameState();
+                g_StateStack.Push(AppScreen::MiniGame);
+                miniGameChoice = 0;
+            }
+            else if (menuChoice == 3) {
                 g_StateStack.Push(AppScreen::Options);
                 optionsChoice = 0;
                 ResetOptionsMenuInputState();
             }
-            else if (menuChoice == 3) {
+            else if (menuChoice == 4) {
                 g_SoundManager.StopMenuMusic();
                 g_SoundManager.PlayCreditsMusic();
                 ResetCreditsScreen();
@@ -406,6 +420,17 @@ int main(int argc, char* argv[]) {
                 creditsChoice = 0;
             }
             menuChoice = 0;
+            break;
+        }
+        case AppScreen::MiniGame: {
+            SetMenuCursorEnabled(false);
+            RenderMiniGameScreen();
+
+            if (miniGameChoice == 2) {
+                g_StateStack.Pop();
+                ResetMenuInputState();
+            }
+            miniGameChoice = 0;
             break;
         }
         case AppScreen::Credits: {

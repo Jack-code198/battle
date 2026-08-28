@@ -6,8 +6,8 @@ SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
     : fmodSystem(nullptr), menuMusic(nullptr), battleMusic(nullptr), creditsMusic(nullptr),
-      selectionSound(nullptr),
-      personaSummonSfx(nullptr), musicChannel(nullptr), currentTrack(nullptr),
+      selectionSound(nullptr), ballCollisionSfx(nullptr), personaSummonSfx(nullptr),
+      musicChannel(nullptr), currentTrack(nullptr),
       isInitialised(false), isPlaying(false), isMuted(false) {
 }
 
@@ -72,6 +72,16 @@ bool SoundManager::Initialise() {
         selectSfx = nullptr;
     }
 
+    FMOD::Sound* ballCollision = nullptr;
+    result = system->createSound(
+        BALL_COLLISION_SOUND,
+        FMOD_DEFAULT,
+        nullptr,
+        &ballCollision);
+    if (result != FMOD_OK) {
+        ballCollision = nullptr;
+    }
+
     FMOD::Sound* personaSummon = nullptr;
     result = system->createSound(
         "assets/sound/persona_summon_sound_effect.mp3",
@@ -86,6 +96,9 @@ bool SoundManager::Initialise() {
         if (selectSfx) {
             selectSfx->release();
         }
+        if (ballCollision) {
+            ballCollision->release();
+        }
         if (personaSummon) {
             personaSummon->release();
         }
@@ -99,6 +112,7 @@ bool SoundManager::Initialise() {
     battleMusic = battleTrack;
     creditsMusic = creditsTrack;
     selectionSound = selectSfx;
+    ballCollisionSfx = ballCollision;
     personaSummonSfx = personaSummon;
     isInitialised = true;
     return true;
@@ -187,6 +201,30 @@ void SoundManager::PlaySelectionSound() {
     }
 }
 
+static float StereoPanFromWorldX(float worldX) {
+    float t = worldX / (float)SCREEN_WIDTH;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    return t * 2.0f - 1.0f;
+}
+
+void SoundManager::PlayBallCollisionSfx(float worldX) {
+    if (!isInitialised || ballCollisionSfx == nullptr) {
+        return;
+    }
+
+    FMOD::System* system = static_cast<FMOD::System*>(fmodSystem);
+    FMOD::Sound* sound = static_cast<FMOD::Sound*>(ballCollisionSfx);
+    FMOD::Channel* channel = nullptr;
+
+    if (system->playSound(sound, nullptr, false, &channel) == FMOD_OK && channel != nullptr) {
+        channel->setPan(StereoPanFromWorldX(worldX));
+        if (isMuted) {
+            channel->setMute(true);
+        }
+    }
+}
+
 void SoundManager::PlayPersonaSummonSfx(float volume) {
     if (!isInitialised || personaSummonSfx == nullptr) {
         return;
@@ -242,6 +280,11 @@ void SoundManager::Shutdown() {
     if (selectionSound != nullptr) {
         static_cast<FMOD::Sound*>(selectionSound)->release();
         selectionSound = nullptr;
+    }
+
+    if (ballCollisionSfx != nullptr) {
+        static_cast<FMOD::Sound*>(ballCollisionSfx)->release();
+        ballCollisionSfx = nullptr;
     }
 
     if (personaSummonSfx != nullptr) {

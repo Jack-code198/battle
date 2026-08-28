@@ -29,14 +29,14 @@ struct CreditEntry {
 };
 
 static const CreditEntry kCreditEntries[] = {
+    { "Character Systems & Implementation", "Heng Jun Zhe" },
     { "Game Logic, Collision & Physics", "Heng Jun Zhe" },
-    { "Fighter Systems & CPU AI", "Heng Jun Zhe" },
     { "Parallax Battle Backgrounds", "Heng Jun Zhe" },
+    { "CPU AI & Battle Behaviour", "Lim Rui Heng" },
     { "UI Menus, HUD & Options", "Lim Rui Heng" },
     { "Audio, Rendering & DirectX", "Lim Rui Heng" },
-    { "Joker & Yosuke Characters", "Lim Rui Heng" },
-    { "Main Menu & Game State Stack", "Jonathan" },
-    { "Input Handling & Tutorial Mode", "Jonathan" },
+    { "Mini Game Physics Demo", "Jonathan" },
+    { "Game State Stack & Input", "Jonathan" },
     { "Battle Flow & Stage Select", "Jonathan" },
 };
 static const int kCreditEntryCount = (int)(sizeof(kCreditEntries) / sizeof(kCreditEntries[0]));

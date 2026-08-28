@@ -11,7 +11,8 @@ enum class AppScreen {
     Pause,
     MoveList,
     GameOver,
-    Credits
+    Credits,
+    MiniGame
 };
 
 class GameStateStack {

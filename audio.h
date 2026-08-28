@@ -21,6 +21,7 @@ public:
     void PlayCreditsMusic();
     void StopCreditsMusic();
     void PlaySelectionSound();
+    void PlayBallCollisionSfx(float worldX);
     void PlayPersonaSummonSfx(float volume = PERSONA_SUMMON_SFX_VOLUME);
     void ToggleMusicMute();
     bool IsMusicMuted() const { return isMuted; }
@@ -36,6 +37,7 @@ private:
     void* battleMusic;
     void* creditsMusic;
     void* selectionSound;
+    void* ballCollisionSfx;
     void* personaSummonSfx;
     void* musicChannel;
     void* currentTrack;
