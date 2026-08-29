@@ -2,6 +2,12 @@
 #include "renderer.h"
 #include <cmath>
 
+// =============================================================================
+// Mini Game physics (BMCS2224) — force-based 2D motion.
+// Each step: engineForce -> acceleration (F/m) -> velocity -> position.
+// Thrust uses sin/cos(rotation); friction and wall/ball collision apply response.
+// =============================================================================
+
 Ball::Ball(float ballMass)
     : position((float)SCREEN_WIDTH * 0.5f, (float)SCREEN_HEIGHT * 0.5f)
     , velocity(0.0f, 0.0f)

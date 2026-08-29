@@ -95,44 +95,27 @@ void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage) {
 }
 
 void BeginBattleLogicFrame() {
-    g_GameTimer.SetLogicSteps(BATTLE_LOGIC_STEPS_PER_FRAME);
+    // Lecture 5: QPC frame timer catches up on slow PCs; fast PCs stay at 1 step/frame.
+    if (g_GameTimer.FramesToUpdate() <= 0) {
+        g_GameTimer.SetLogicSteps(BATTLE_LOGIC_STEPS_PER_FRAME);
+    }
 }
 
-static int g_TutorialRecoverIdleFrames[2] = { 0, 0 };
-
 static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
+    (void)steps;
+    if (!fighter.IsHumanControlled()) return;
+
     const int slot = fighter.GetPlayerSlot();
-    if (slot < 0 || slot > 1) return;
+    fighter.sp = fighter.maxSp;
+    fighter.RefillStamina();
 
-    // Sandbag: keep damage visible — use H key to heal, not passive refill.
-    if (!fighter.IsHumanControlled()) {
-        return;
+    if (fighter.health < fighter.maxHealth || fighter.isDead) {
+        fighter.health = fighter.maxHealth;
+        fighter.isDead = false;
+        if (slot >= 0 && slot <= 1) {
+            SyncBattleHudHealth(slot + 1, fighter.health, fighter.maxHealth);
+        }
     }
-
-    if (fighter.IsHumanControlled()) {
-        fighter.sp = fighter.maxSp;
-        fighter.RefillStamina();
-    }
-
-    if (fighter.health >= fighter.maxHealth) {
-        g_TutorialRecoverIdleFrames[slot] = 0;
-        return;
-    }
-
-    if (fighter.isHit || fighter.IsInCombatAction()) {
-        g_TutorialRecoverIdleFrames[slot] = 0;
-        return;
-    }
-
-    g_TutorialRecoverIdleFrames[slot] += steps;
-    if (g_TutorialRecoverIdleFrames[slot] < TRAINING_HEAL_IDLE_FRAMES) return;
-
-    fighter.health = fighter.maxHealth;
-    SyncBattleHudHealth(slot + 1, fighter.health, fighter.maxHealth);
-    if (fighter.IsHumanControlled()) {
-        fighter.RefillStamina();
-    }
-    g_TutorialRecoverIdleFrames[slot] = 0;
 }
 
 void ApplyTutorialModePerks(int steps) {
@@ -524,8 +507,6 @@ void ResetBattleFlow() {
     g_HitComboTimeoutSteps = 0;
     g_BattlePlayer1Won = true;
     if (IsTutorialBattleMode()) {
-        g_TutorialRecoverIdleFrames[0] = 0;
-        g_TutorialRecoverIdleFrames[1] = 0;
         ResetTutorialGuide();
         PositionFightersAtDefaultSpawn();
     }

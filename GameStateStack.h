@@ -1,7 +1,14 @@
 #pragma once
 #include <vector>
 
-// High-level screens pushed/popped like a stack (game over retry / back).
+// =============================================================================
+// Game state stack (BMCS2224 framework)
+// Screens are pushed/popped like a stack: MainMenu -> PlayerSelect -> Battle ->
+// Pause (overlay) -> GameOver. Pop returns to the previous screen without rewiring
+// navigation in main.cpp for every transition. RetryFromGameOver pops GameOver
+// and resumes Battle; ReturnToMainMenu clears the stack to the menu root.
+// =============================================================================
+
 enum class AppScreen {
     MainMenu,
     Options,
@@ -29,7 +36,7 @@ public:
         }
     }
 
-    // Game over → retry: pop GameOver and keep Battle, or replace top.
+    // Push GameOver on top of Battle when a round ends (R = retry, ESC = menu).
     void ExecuteGameOver() {
         if (Current() != AppScreen::GameOver) {
             Push(AppScreen::GameOver);
@@ -38,7 +45,7 @@ public:
 
     void RetryFromGameOver() {
         if (Current() == AppScreen::GameOver) {
-            Pop(); // remove GameOver → return to Battle
+            Pop(); // remove GameOver -> return to Battle
         }
         if (Current() != AppScreen::Battle) {
             Push(AppScreen::Battle);

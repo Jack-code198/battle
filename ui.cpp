@@ -790,8 +790,8 @@ void DrawBattleDebugHintOverlay() {
     const char* hint = nullptr;
     if (tutorial) {
         hint = g_ShowDebugHitboxes
-            ? "DEBUG: hitboxes ON (B off | H heal)"
-            : "B: hitbox debug | H: heal HP";
+            ? "DEBUG: hitboxes ON (B to hide) | Tutorial: infinite HP & SP"
+            : "B: hitbox debug | Tutorial: infinite HP & SP";
     }
     else {
         hint = g_ShowDebugHitboxes

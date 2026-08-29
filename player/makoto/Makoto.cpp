@@ -213,31 +213,6 @@ static bool AllowsMakotoMovement(int state, bool superActive) {
     }
 }
 
-// Hold the last frame for a full tick period before completing (avoids one-frame flashes).
-static bool AdvanceOneShotFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int maxFrame) {
-    if (maxFrame <= 0 || ticksPerFrame <= 0) return false;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        if (frame < maxFrame - 1) {
-            frame++;
-        }
-        else {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int frameCount) {
-    if (frameCount <= 0) return;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        frame = (frame + 1) % frameCount;
-    }
-}
-
 
 static bool ResetsAnimationOnEnter(int state) {
     switch (state) {
@@ -1857,7 +1832,7 @@ void Makoto::TakeDamage(int damage) {
         BeginSandbagHitReaction();
     }
 
-    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+    if (ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
 

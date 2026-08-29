@@ -5,6 +5,15 @@
 #include "ui.h"
 #include <cstring>
 
+// =============================================================================
+// Input module (BMCS2224) — DirectInput 8 keyboard via InputManager.
+// Setup follows the lecture five-step flow:
+//   1) DirectInput8Create   2) CreateDevice(GUID_SysKeyboard)
+//   3) SetDataFormat(c_dfDIKeyboard)   4) SetCooperativeLevel(FOREGROUND|NONEXCLUSIVE)
+//   5) Acquire, then GetDeviceState each frame in Poll().
+// Menus use IsUiKeyDown(); battle uses IsGameKeyDown() with optional AI overlay.
+// =============================================================================
+
 HWND g_hWnd = NULL;
 WNDCLASS wndClass;
 MSG msg;
@@ -114,6 +123,11 @@ void SetAiMouseLeftDown(bool down) {
     g_AiMouseLeftDown = down;
 }
 
+bool IsUiKeyDown(int directInputKey) {
+    if (!g_WindowHasFocus) return false;
+    return g_InputManager.IsKeyDown(directInputKey);
+}
+
 bool IsGameKeyDown(int directInputKey) {
     // Freeze combat input outside the active fight window (countdown / KO / result).
     if (!IsBattleInputAllowed()) {
@@ -215,17 +229,6 @@ LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM 
         case 'F':
             ToggleFullscreen();
             break;
-        case 'H':
-            // Tutorial only — battle mode has no manual heal.
-            if (!IsTutorialBattleMode()) break;
-            if (!g_Player1 || !g_Player2) break;
-            g_Player1->health = g_Player1->GetMaxHealth();
-            g_Player1->isDead = false;
-            g_Player2->health = g_Player2->GetMaxHealth();
-            g_Player2->isDead = false;
-            SyncBattleHudHealth(1, g_Player1->GetHealth(), g_Player1->GetMaxHealth());
-            SyncBattleHudHealth(2, g_Player2->GetHealth(), g_Player2->GetMaxHealth());
-            break;
         case 'B':
             g_ShowDebugHitboxes = !g_ShowDebugHitboxes;
             break;
@@ -303,7 +306,7 @@ void CreateMyWindow() {
     const int windowW = windowRect.right - windowRect.left;
     const int windowH = windowRect.bottom - windowRect.top;
 
-    g_hWnd = CreateWindowEx(0, wndClass.lpszClassName, "Persona Framework", WS_OVERLAPPEDWINDOW,
+    g_hWnd = CreateWindowEx(0, wndClass.lpszClassName, "Persona Arena", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, windowW, windowH, NULL, NULL, GetModuleHandle(NULL), NULL);
 
     LoadGameCursor();

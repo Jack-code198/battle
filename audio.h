@@ -4,7 +4,8 @@
 
 // =============================================================================
 // Sound module (BMCS2224) — OO FMOD wrapper.
-// Initialise / Update / Shutdown own the FMOD system. Menu + battle BGM loop;
+// Initialise / Update / Shutdown own the FMOD system. Menu BGM + battle_music.mp3
+// (Battle and Tutorial modes); credits and one-shot SFX.
 // UI selection is a one-shot. Mutes via ToggleMusicMute without tearing down FMOD.
 // =============================================================================
 
@@ -21,6 +22,7 @@ public:
     void PlayCreditsMusic();
     void StopCreditsMusic();
     void PlaySelectionSound();
+    // One-shot ball wall/pair hit; worldX drives stereo pan (left/right ear).
     void PlayBallCollisionSfx(float worldX);
     void PlayPersonaSummonSfx(float volume = PERSONA_SUMMON_SFX_VOLUME);
     void ToggleMusicMute();

@@ -67,7 +67,6 @@ private:
     bool forceResetRequested;
     bool shouldReturnToOriginal;
     bool isActive;
-    int trainingIdleFrames;
     int idleWaitFrames;
     int damageGroundHold;
     int introDisplayHold;
@@ -91,7 +90,6 @@ private:
     bool winRunoffActive;
 
     void UpdateHurtbox();
-    void TryTrainingHeal();
     void BeginHitReaction(float knockbackX);
     void BeginRecover();
     void FinishRecoverToStance();

@@ -25,9 +25,15 @@ private:
 
 extern InputManager g_InputManager;
 
+// Lecture 4 KEYDOWN macro — buffer[key] & 0x80.
+#define KEYDOWN(keyBuffer, key) ((keyBuffer)[(key)] & 0x80)
+
 // Shared focus-aware queries used by all fighters (routes through InputManager).
 bool IsGameKeyDown(int directInputKey);
 bool IsGameMouseDown(int virtualKey);
+
+// Menus, pause, mini game: keyboard via InputManager (no battle-input gate).
+bool IsUiKeyDown(int directInputKey);
 
 // CPU AI key overlay — while enabled, IsGameKeyDown / IsGameMouseDown use ONLY AI
 // state (human keyboard/mouse are ignored) so P2 cannot mirror P1 skill keys.

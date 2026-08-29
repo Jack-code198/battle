@@ -369,10 +369,10 @@ void pauseMenuScreen(int& choice) {
     // --- Input ---
     UpdatePauseItemRects();
 
-    bool upPressed = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    bool downPressed = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-    bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    bool upPressed = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    bool downPressed = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    bool enterPressed = IsUiKeyDown(DIK_RETURN);
+    bool escPressed = IsUiKeyDown(DIK_ESCAPE);
     bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -513,10 +513,10 @@ void pauseMenuScreen(int& choice) {
 }
 
 void ResetPauseMenuInputState() {
-    g_PauseUpHeld = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    g_PauseDownHeld = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    g_PauseEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
-    g_PauseEscHeld = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_PauseUpHeld = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    g_PauseDownHeld = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    g_PauseEnterHeld = IsUiKeyDown(DIK_RETURN);
+    g_PauseEscHeld = IsUiKeyDown(DIK_ESCAPE);
     g_PauseClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_PauseSelection = 0;
     g_LastHoveredPauseOption = -1;
@@ -692,10 +692,10 @@ void moveListScreen(int& choice, CharacterId activeCharacter) {
     // --- Input ---
     UpdateMoveListControlRects();
 
-    bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0;
-    bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
-    bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
+    bool backPressed = IsUiKeyDown(DIK_BACK);
+    bool escPressed = IsUiKeyDown(DIK_ESCAPE);
+    bool leftPressed = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    bool rightPressed = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
     bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -831,10 +831,10 @@ void moveListScreen(int& choice, CharacterId activeCharacter) {
 }
 
 void ResetMoveListInputState() {
-    g_MoveListBackHeld = (diKeys[DIK_BACK] & 0x80) != 0;
-    g_MoveListEscHeld = (diKeys[DIK_ESCAPE] & 0x80) != 0;
-    g_MoveListLeftHeld = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    g_MoveListRightHeld = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
+    g_MoveListBackHeld = IsUiKeyDown(DIK_BACK);
+    g_MoveListEscHeld = IsUiKeyDown(DIK_ESCAPE);
+    g_MoveListLeftHeld = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    g_MoveListRightHeld = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
     g_MoveListClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_LastHoveredMoveListControl = MoveListControl_None;
     g_MoveListPage = 0;

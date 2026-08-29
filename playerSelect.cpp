@@ -607,10 +607,10 @@ static void UpdatePlayerSelectInput(int& choice) {
         UpdateModeOptionHitboxes();
         UpdateModeSelectHoverFromCursor();
 
-        bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-        bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
-        bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-        bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+        bool leftPressed = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+        bool rightPressed = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
+        bool enterPressed = IsUiKeyDown(DIK_RETURN);
+        bool backPressed = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
         bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
         POINT cursorPt = {};
@@ -661,10 +661,10 @@ static void UpdatePlayerSelectInput(int& choice) {
     UpdatePortraitHitboxes();
     UpdatePlayerSelectHoverFromCursor();
 
-    bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
-    bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-    bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    bool leftPressed = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    bool rightPressed = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
+    bool enterPressed = IsUiKeyDown(DIK_RETURN);
+    bool backPressed = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -718,10 +718,10 @@ static void UpdatePlayerSelectInput(int& choice) {
 }
 
 void ResetPlayerSelectInputState() {
-    g_PlayerSelectLeftHeld = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    g_PlayerSelectRightHeld = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
-    g_PlayerSelectEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
-    g_PlayerSelectBackHeld = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_PlayerSelectLeftHeld = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    g_PlayerSelectRightHeld = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
+    g_PlayerSelectEnterHeld = IsUiKeyDown(DIK_RETURN);
+    g_PlayerSelectBackHeld = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     g_PlayerSelectClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_LastHoveredPortrait = -1;
     g_LastHoveredModeOption = -1;

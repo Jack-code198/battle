@@ -23,7 +23,7 @@ static bool g_TutorialGuideReady = false;
 
 static const char* kTutorialFreeTitle = "Free Practice";
 static const char* kTutorialFreeDetail =
-    "All moves complete! HP and SP refill in Tutorial. Keep training on the sandbag.";
+    "All moves complete! HP and SP stay full in Tutorial. Keep training on the sandbag.";
 
 #define TUTORIAL_END -1
 

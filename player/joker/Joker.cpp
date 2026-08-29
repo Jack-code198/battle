@@ -15,34 +15,6 @@ extern AttackData sideAttackHitbox;
 extern AttackData attackUpHitbox;
 extern AttackData downAttackHitbox;
 
-
-// Same stepping helpers Makoto uses so Joker animates on the shared 60 FPS timer.
-// Returns true only after the last frame has also been held for ticksPerFrame
-// (so short sheets like recover's 3 frames are actually visible).
-static bool AdvanceOneShotFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int maxFrame) {
-    if (maxFrame <= 0 || ticksPerFrame <= 0) return false;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        if (frame < maxFrame - 1) {
-            frame++;
-        }
-        else {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int frameCount) {
-    if (frameCount <= 0) return;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        frame = (frame + 1) % frameCount;
-    }
-}
-
 struct JokerTexture {
     LPDIRECT3DTEXTURE9 texture = nullptr;
     int maxFrame = 1;
@@ -242,7 +214,7 @@ Joker::Joker()
     , isStunned(false), isReturningToPosition(false)
     , damageAnimLength(4), damageTimer(0), stunTimer(0)
     , isDamageAnimating(false), isForceResetting(false), forceResetRequested(false)
-    , shouldReturnToOriginal(false), isActive(true), trainingIdleFrames(0), idleWaitFrames(0)
+    , shouldReturnToOriginal(false), isActive(true), idleWaitFrames(0)
     , damageGroundHold(0), introDisplayHold(0), introLastFrame(0)
     , jumpCount(0), jumpHorizontalSpeed(0.0f), verticalVelocity(0.0f)
     , hitThisAttack(false), attackButtonHeld(false), dodgeForward(true)
@@ -263,18 +235,6 @@ Joker::Joker()
     maxFrame = g_JokerAnims[JOKER_ANIM_INTRO].joker.maxFrame;
     if (maxFrame < 1) maxFrame = 1;
     UpdateHurtbox();
-}
-
-void Joker::TryTrainingHeal() {
-    if (!IsTutorialBattleMode() || health >= maxHealth || isHit) return;
-
-    trainingIdleFrames++;
-    if (trainingIdleFrames < TRAINING_HEAL_IDLE_FRAMES) return;
-
-    health = maxHealth;
-    isDead = false;
-    trainingIdleFrames = 0;
-    SyncBattleHudHealth(2, health, maxHealth);
 }
 
 void Joker::UpdateHurtbox() {
@@ -572,7 +532,6 @@ void Joker::BeginRecover() {
 }
 
 void Joker::FinishRecoverToStance() {
-    trainingIdleFrames = 0;
     idleWaitFrames = 0;
 
     if (!IsHumanControlled()) {
@@ -1522,7 +1481,6 @@ void Joker::TakeDamage(int damage) {
             health -= appliedDamage;
             if (health < 0) health = 0;
         }
-        trainingIdleFrames = 0;
         idleWaitFrames = 0;
         NotifyFighterDamageApplied(*this, appliedDamage);
         UpdateHurtbox();
@@ -1532,11 +1490,10 @@ void Joker::TakeDamage(int damage) {
     // Always apply HP so follow-up hits / skills still hurt after knock-down.
     health -= appliedDamage;
     if (health < 0) health = 0;
-    trainingIdleFrames = 0;
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (ShouldFighterDieOnZeroHealth() && !TRAINING_MODE && health <= 0) isDead = true;
+        if (ShouldFighterDieOnZeroHealth() && health <= 0) isDead = true;
         NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
@@ -1547,7 +1504,7 @@ void Joker::TakeDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+    if (ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
 
@@ -1572,11 +1529,10 @@ void Joker::ApplySkillDamage(int damage) {
     const int appliedDamage = damage;
     health -= appliedDamage;
     if (health < 0) health = 0;
-    trainingIdleFrames = 0;
     idleWaitFrames = 0;
 
     if (isHit || currentState == JOKER_DAMAGE || currentState == JOKER_RECOVER) {
-        if (ShouldFighterDieOnZeroHealth() && !TRAINING_MODE && health <= 0) isDead = true;
+        if (ShouldFighterDieOnZeroHealth() && health <= 0) isDead = true;
         NotifyFighterDamageApplied(*this, appliedDamage);
         return;
     }
@@ -1587,7 +1543,7 @@ void Joker::ApplySkillDamage(int damage) {
     }
     BeginHitReaction(knockback);
 
-    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+    if (ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
 
@@ -1681,7 +1637,6 @@ void Joker::Reset() {
     isDead = false;
     resultPoseAnimLocked = false;
     isActive = true;
-    trainingIdleFrames = 0;
     idleWaitFrames = 0;
     jumpCount = 0;
     jumpHorizontalSpeed = 0.0f;

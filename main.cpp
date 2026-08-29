@@ -17,7 +17,6 @@
 #include "stageSelect.h"
 #include "playerSelect.h"
 #include "collision.h"
-#include "physics.h"
 #include "FontRenderer.h"
 #include "GameStateStack.h"
 #include "battleBackground.h"
@@ -69,9 +68,6 @@ static bool g_BattleEscHeld = false;
 static bool g_GameOverRetryHeld = false;
 static bool g_BattleSetupPending = false;
 
-// --- Physics sample (gravity / velocity / acceleration / force) ---
-static PhysicsBody g_PhysicsDemo;
-
 // --- Collision detection sample (AABB + OBB + overlap response + frame-miss sweep) ---
 static bool g_CollisionSystemsReady = false;
 
@@ -83,7 +79,7 @@ static void TryAttachDebugConsole() {
     freopen_s(&stream, "CONOUT$", "w", stdout);
     freopen_s(&stream, "CONOUT$", "w", stderr);
     freopen_s(&stream, "CONIN$", "r", stdin);
-    SetConsoleTitleA("Persona Battle Debug Console");
+    SetConsoleTitleA("Persona Arena Debug Console");
 }
 
 static void PrintCollisionSelfTestReport(const CollisionSelfTestReport& report) {
@@ -92,7 +88,7 @@ static void PrintCollisionSelfTestReport(const CollisionSelfTestReport& report) 
     printf("[Collision] OBB intersect ......... %s\n", report.obbHit ? "PASS" : "FAIL");
     printf("[Collision] Overlap resolve ....... %s\n", report.overlapResolved ? "PASS" : "FAIL");
     printf("[Collision] Overall ............... %s\n", report.AllPassed() ? "PASS" : "FAIL");
-    printf("[Battle debug] Press B to toggle hitboxes. Press H to heal (tutorial mode only).\n");
+    printf("[Battle debug] Press B to toggle hitboxes.\n");
     printf("[Collision debug] Ball + fighter collisions log here as \"Collision detected\".\n");
 }
 
@@ -101,13 +97,8 @@ static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     BindGameFontRenderer(&g_FontRenderer);
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
 
-    // Physics module demo (fighters also use PhysicsBody via ApplyPhysicsGravitySteps).
-    g_PhysicsDemo = PhysicsBody();
-    g_PhysicsDemo.mass = 1.0f;
-    g_PhysicsDemo.position = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-    PhysicsWorld::IntegrateGravityOnGround(g_PhysicsDemo, CHARACTER_GROUND_Y, GRAVITY, 1.0f / 60.0f);
-
     // Collision detection (AABB / OBB / swept / overlap) — wired from int main.
+    // Fighter gravity uses PhysicsBody in ApplyPhysicsGravitySteps; Mini Game uses Ball.
     const CollisionSelfTestReport collisionReport = RunCollisionModuleSelfTest();
     g_CollisionSystemsReady = collisionReport.AllPassed();
     PrintCollisionSelfTestReport(collisionReport);
@@ -256,6 +247,7 @@ static void RenderGameOverScreen() {
 
 static void StartBattleFromSelect() {
     ApplySelectedStageToBattle();
+    // Battle mode and Tutorial mode both use assets/sound/battle_music.mp3.
     g_SoundManager.StopMenuMusic();
     g_SoundManager.PlayBattleMusic();
     g_BattleSetupPending = true;
@@ -277,6 +269,8 @@ static void FinishPendingBattleSetup() {
     ResetBattleParallaxScroll();
     g_GameTimer.Reset();
     g_BattleSetupPending = false;
+    // Ensure BGM is battle_music for both Battle and Tutorial (covers late asset copy / pause resume).
+    g_SoundManager.PlayBattleMusic();
 }
 
 static void CheckBattleGameOver() {
@@ -284,12 +278,9 @@ static void CheckBattleGameOver() {
     if (!ConsumeBattleFinishedExit()) return;
 
     g_SoundManager.StopBattleMusic();
-    g_SoundManager.PlayMenuMusic();
-    SetMenuCursorEnabled(true);
-    ResetPlayerSelectInputState();
-    playerSelectChoice = 0;
-    g_StateStack.ReturnToPlayerSelectAfterBattle();
-    ResetBattleFlow();
+    g_StateStack.ExecuteGameOver();
+    g_GameOverRetryHeld = false;
+    g_BattleEscHeld = false;
 }
 
 // Entry point (BMCS2224): int main — game loop, font, collision, physics, state stack.
@@ -297,7 +288,7 @@ int main(int argc, char* argv[]) {
     const bool collisionTestOnly = (argc >= 2 && strcmp(argv[1], "--collision-test") == 0);
     if (!collisionTestOnly) {
         TryAttachDebugConsole();
-        printf("Persona Battle debug console ready.\n");
+        printf("Persona Arena debug console ready.\n");
     }
     else {
         TryAttachDebugConsole();
@@ -386,10 +377,6 @@ int main(int argc, char* argv[]) {
         DWORD frameStart = GetTickCount();
         GetInput();
         g_SoundManager.Update();
-
-        // Tick physics demo each frame (force -> accel -> velocity -> position).
-        g_PhysicsDemo.ApplyGravity(GRAVITY);
-        g_PhysicsDemo.Integrate(1.0f / 60.0f);
 
         switch (g_StateStack.Current()) {
         case AppScreen::MainMenu: {
@@ -511,7 +498,7 @@ int main(int argc, char* argv[]) {
             Render();
             CheckBattleGameOver();
 
-            const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+            const bool escPressed = IsUiKeyDown(DIK_ESCAPE);
             if (escPressed && !g_BattleEscHeld && IsBattleInputAllowed()) {
                 g_SoundManager.PlaySelectionSound();
                 SetMenuCursorEnabled(true);
@@ -530,6 +517,7 @@ int main(int argc, char* argv[]) {
             case 1:
                 g_StateStack.Pop();
                 SetMenuCursorEnabled(false);
+                g_SoundManager.PlayBattleMusic();
                 if (g_Player1) g_Player1->SyncHeldInputState();
                 if (g_Player2) g_Player2->SyncHeldInputState();
                 break;
@@ -603,8 +591,8 @@ int main(int argc, char* argv[]) {
             // BMCS2224: GameStateStack ExecuteGameOver / RetryFromGameOver (R = retry, ESC = menu).
             RenderGameOverScreen();
 
-            const bool retryPressed = (diKeys[DIK_R] & 0x80) != 0;
-            const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+            const bool retryPressed = IsUiKeyDown(DIK_R);
+            const bool escPressed = IsUiKeyDown(DIK_ESCAPE);
             if (retryPressed && !g_GameOverRetryHeld) {
                 if (g_Player1) g_Player1->Reset();
                 if (g_Player2) g_Player2->Reset();
@@ -614,6 +602,8 @@ int main(int argc, char* argv[]) {
                 }
                 ResetBattleFlow();
                 g_StateStack.RetryFromGameOver();
+                g_SoundManager.PlayBattleMusic();
+                SetMenuCursorEnabled(false);
             }
             else if (escPressed && !g_BattleEscHeld) {
                 g_SoundManager.StopBattleMusic();

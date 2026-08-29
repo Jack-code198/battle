@@ -372,10 +372,10 @@ static void UpdateStageSelectInput(int& choice) {
     UpdateStageUiHitboxes();
     UpdateStageUiFocusFromCursor();
 
-    bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
-    bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-    bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    bool leftPressed = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    bool rightPressed = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
+    bool enterPressed = IsUiKeyDown(DIK_RETURN);
+    bool backPressed = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -425,10 +425,10 @@ static void UpdateStageSelectInput(int& choice) {
 }
 
 void ResetStageSelectInputState() {
-    g_StageLeftHeld = (diKeys[DIK_LEFT] & 0x80) != 0 || (diKeys[DIK_A] & 0x80) != 0;
-    g_StageRightHeld = (diKeys[DIK_RIGHT] & 0x80) != 0 || (diKeys[DIK_D] & 0x80) != 0;
-    g_StageEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
-    g_StageBackHeld = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_StageLeftHeld = IsUiKeyDown(DIK_LEFT) || IsUiKeyDown(DIK_A);
+    g_StageRightHeld = IsUiKeyDown(DIK_RIGHT) || IsUiKeyDown(DIK_D);
+    g_StageEnterHeld = IsUiKeyDown(DIK_RETURN);
+    g_StageBackHeld = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     g_StageClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_StageUiFocus = StageUi_None;
     g_LastStageUiFocus = StageUi_None;

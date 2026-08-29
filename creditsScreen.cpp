@@ -377,7 +377,7 @@ void ResetCreditsScreen() {
     g_CreditsPhase = CreditsPhase::Scrolling;
     g_CreditsScrollY = (float)SCREEN_HEIGHT;
     g_CreditsPhaseStartMs = GetTickCount();
-    g_CreditsEscHeld = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_CreditsEscHeld = IsUiKeyDown(DIK_ESCAPE);
 }
 
 void creditsScreen(int& choice) {
@@ -385,7 +385,7 @@ void creditsScreen(int& choice) {
         return;
     }
 
-    const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    const bool escPressed = IsUiKeyDown(DIK_ESCAPE);
     if (escPressed && !g_CreditsEscHeld) {
         g_SoundManager.PlaySelectionSound();
         choice = 2;

@@ -69,20 +69,20 @@ void CleanUpMiniGameAssets() {
 void ResetMiniGameState() {
     g_MiniBall1.Reset((float)SCREEN_WIDTH * 0.32f, (float)SCREEN_HEIGHT * 0.55f);
     g_MiniBall2.Reset((float)SCREEN_WIDTH * 0.68f, (float)SCREEN_HEIGHT * 0.55f);
-    g_MiniGameEscHeld = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_MiniGameEscHeld = IsUiKeyDown(DIK_ESCAPE);
 }
 
 static void UpdateMiniGameBalls() {
     g_MiniBall1.BeginFrame();
     g_MiniBall2.BeginFrame();
 
-    g_MiniBall1.SetThrustActive((diKeys[DIK_UP] & 0x80) != 0);
-    g_MiniBall1.SetRotateLeft((diKeys[DIK_LEFT] & 0x80) != 0);
-    g_MiniBall1.SetRotateRight((diKeys[DIK_RIGHT] & 0x80) != 0);
+    g_MiniBall1.SetThrustActive(IsUiKeyDown(DIK_UP));
+    g_MiniBall1.SetRotateLeft(IsUiKeyDown(DIK_LEFT));
+    g_MiniBall1.SetRotateRight(IsUiKeyDown(DIK_RIGHT));
 
-    g_MiniBall2.SetThrustActive((diKeys[DIK_W] & 0x80) != 0);
-    g_MiniBall2.SetRotateLeft((diKeys[DIK_A] & 0x80) != 0);
-    g_MiniBall2.SetRotateRight((diKeys[DIK_D] & 0x80) != 0);
+    g_MiniBall2.SetThrustActive(IsUiKeyDown(DIK_W));
+    g_MiniBall2.SetRotateLeft(IsUiKeyDown(DIK_A));
+    g_MiniBall2.SetRotateRight(IsUiKeyDown(DIK_D));
 
     if (g_MiniBall1.IntegrateStep()) {
         LogCollisionDetected("ball wall");
@@ -132,7 +132,7 @@ static void RenderMiniGameFrame() {
         RECT hintRect = { 40, SCREEN_HEIGHT - 72, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 16 };
         g_MiniGameHintFont->DrawTextA(
             spriteBrush,
-            "Ball 1: Arrows (Up thrust, Left/Right rotate)    Ball 2: WASD (W thrust, A/D rotate)\r\nEsc: return to main menu",
+            "Ball 1: Arrows (Up thrust, Left/Right rotate)    Ball 2: WASD (W thrust, A/D rotate)\r\nCollision SFX pans left/right by screen position (left side = left ear). Esc: main menu",
             -1,
             &hintRect,
             DT_CENTER | DT_BOTTOM,
@@ -147,7 +147,7 @@ void miniGameScreen(int& choice) {
         return;
     }
 
-    const bool escPressed = (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    const bool escPressed = IsUiKeyDown(DIK_ESCAPE);
     if (escPressed && !g_MiniGameEscHeld) {
         g_SoundManager.PlaySelectionSound();
         choice = 2;

@@ -351,12 +351,12 @@ static void AdjustBrightness(int delta) {
 static void UpdateOptionsInput(int& choice) {
     UpdateOptionsRects();
 
-    bool upPressed = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    bool downPressed = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    bool leftPressed = (diKeys[DIK_LEFT] & 0x80) != 0;
-    bool rightPressed = (diKeys[DIK_RIGHT] & 0x80) != 0;
-    bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
-    bool backPressed = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    bool upPressed = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    bool downPressed = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    bool leftPressed = IsUiKeyDown(DIK_LEFT);
+    bool rightPressed = IsUiKeyDown(DIK_RIGHT);
+    bool enterPressed = IsUiKeyDown(DIK_RETURN);
+    bool backPressed = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -447,12 +447,12 @@ static void UpdateOptionsInput(int& choice) {
 }
 
 void ResetOptionsMenuInputState() {
-    g_OptionsUpHeld = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    g_OptionsDownHeld = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    g_OptionsLeftHeld = (diKeys[DIK_LEFT] & 0x80) != 0;
-    g_OptionsRightHeld = (diKeys[DIK_RIGHT] & 0x80) != 0;
-    g_OptionsEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
-    g_OptionsBackHeld = (diKeys[DIK_BACK] & 0x80) != 0 || (diKeys[DIK_ESCAPE] & 0x80) != 0;
+    g_OptionsUpHeld = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    g_OptionsDownHeld = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    g_OptionsLeftHeld = IsUiKeyDown(DIK_LEFT);
+    g_OptionsRightHeld = IsUiKeyDown(DIK_RIGHT);
+    g_OptionsEnterHeld = IsUiKeyDown(DIK_RETURN);
+    g_OptionsBackHeld = IsUiKeyDown(DIK_BACK) || IsUiKeyDown(DIK_ESCAPE);
     g_OptionsClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_OptionsSelection = 0;
     g_LastHoveredOption = -1;

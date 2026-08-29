@@ -102,30 +102,6 @@ NarukamiTexture g_IzanagiMyriadTruths;
 
 RECT g_SrcRect;
 
-bool AdvanceOneShotFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int maxFrame) {
-    if (maxFrame <= 0 || ticksPerFrame <= 0) return false;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        if (frame < maxFrame - 1) {
-            frame++;
-        }
-        else {
-            return true;
-        }
-    }
-    return false;
-}
-
-void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int frameCount) {
-    if (frameCount <= 0) return;
-    accumulator += steps;
-    while (accumulator >= ticksPerFrame) {
-        accumulator -= ticksPerFrame;
-        frame = (frame + 1) % frameCount;
-    }
-}
-
 int ClampFrameIndex(const NarukamiTexture& tex, int frameIndex) {
     if (tex.maxFrame <= 0) return 0;
     if (frameIndex < 0) return 0;
@@ -1872,7 +1848,7 @@ void Narukami::TakeDamage(int damage) {
         if (currentState != NARUKAMI_DAMAGE && currentState != NARUKAMI_RECOVER) {
             BeginHitReaction();
         }
-        if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+        if (ShouldFighterDieOnZeroHealth() && health <= 0) {
             isDead = true;
         }
         NotifyFighterDamageApplied(*this, appliedDamage);
@@ -1889,7 +1865,7 @@ void Narukami::TakeDamage(int damage) {
         hitStunTimer = kHitStunFrames;
     }
 
-    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+    if (ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
 
@@ -1923,7 +1899,7 @@ void Narukami::ApplySkillDamage(int damage) {
         BeginHitReaction();
     }
 
-    if (!TRAINING_MODE && ShouldFighterDieOnZeroHealth() && health <= 0) {
+    if (ShouldFighterDieOnZeroHealth() && health <= 0) {
         isDead = true;
     }
 

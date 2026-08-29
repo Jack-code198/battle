@@ -278,9 +278,9 @@ static void ConfirmMenuSelection(int& choice) {
 static void UpdateMenuInput(int& choice) {
     UpdateOptionRects();
 
-    const bool upPressed = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    const bool downPressed = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    const bool enterPressed = (diKeys[DIK_RETURN] & 0x80) != 0;
+    const bool upPressed = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    const bool downPressed = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    const bool enterPressed = IsUiKeyDown(DIK_RETURN);
     const bool clickPressed = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
 
     POINT cursorPt = {};
@@ -328,9 +328,9 @@ static void UpdateMenuInput(int& choice) {
 }
 
 void ResetMenuInputState() {
-    g_MenuUpHeld = (diKeys[DIK_UP] & 0x80) != 0 || (diKeys[DIK_W] & 0x80) != 0;
-    g_MenuDownHeld = (diKeys[DIK_DOWN] & 0x80) != 0 || (diKeys[DIK_S] & 0x80) != 0;
-    g_MenuEnterHeld = (diKeys[DIK_RETURN] & 0x80) != 0;
+    g_MenuUpHeld = IsUiKeyDown(DIK_UP) || IsUiKeyDown(DIK_W);
+    g_MenuDownHeld = IsUiKeyDown(DIK_DOWN) || IsUiKeyDown(DIK_S);
+    g_MenuEnterHeld = IsUiKeyDown(DIK_RETURN);
     g_MenuClickHeld = g_WindowHasFocus && ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
     g_LastHoveredOption = -1;
 }

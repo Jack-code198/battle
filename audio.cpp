@@ -2,6 +2,16 @@
 #include "fmod_errors.h"
 #include "audio.h"
 
+// =============================================================================
+// Sound module (BMCS2224) — FMOD lifecycle.
+// Initialise: System_Create -> init -> createSound (menu/battle/credits/SFX).
+// Update:     call system->update() once per frame from the main loop.
+// Shutdown:   stop channels, release sounds, close and release the system.
+// Battle BGM (battle_music.mp3) loops during Battle mode and Tutorial mode.
+// Ball collision (ball_collision_sound.wav) uses setPan: screen-left = left ear (-1),
+// screen-right = right ear (+1), mapped from the collision world X position.
+// =============================================================================
+
 SoundManager g_SoundManager;
 
 SoundManager::SoundManager()
@@ -34,7 +44,7 @@ bool SoundManager::Initialise() {
 
     FMOD::Sound* menuTrack = nullptr;
     result = system->createSound(
-        "assets/sound/mainmenu_music.mp3",
+        MAINMENU_MUSIC_FILE,
         FMOD_LOOP_NORMAL | FMOD_DEFAULT,
         nullptr,
         &menuTrack);
@@ -44,7 +54,7 @@ bool SoundManager::Initialise() {
 
     FMOD::Sound* battleTrack = nullptr;
     result = system->createSound(
-        "assets/sound/battle_music.mp3",
+        BATTLE_MUSIC_FILE,
         FMOD_LOOP_NORMAL | FMOD_DEFAULT,
         nullptr,
         &battleTrack);
@@ -201,6 +211,7 @@ void SoundManager::PlaySelectionSound() {
     }
 }
 
+// Map screen X to FMOD stereo pan: 0 = left edge (-1), SCREEN_WIDTH = right edge (+1).
 static float StereoPanFromWorldX(float worldX) {
     float t = worldX / (float)SCREEN_WIDTH;
     if (t < 0.0f) t = 0.0f;

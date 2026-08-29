@@ -410,9 +410,7 @@ inline constexpr int DASH_HIT_DAMAGE = 28;
 // (P2 sandbag by default; any fighter can be sandbag when humanControlled is false).
 inline constexpr bool JOKER_SANDBAG_MODE = true;
 inline constexpr bool OPPONENT_SANDBAG_MODE = JOKER_SANDBAG_MODE;
-// Training heal / no-death. Keep false for real battle SP / damage feedback.
-inline constexpr bool TRAINING_MODE = false;
-inline constexpr int TRAINING_HEAL_IDLE_FRAMES = 45;
+// Training / no-death: use IsTutorialBattleMode() and ShouldFighterDieOnZeroHealth() at runtime.
 inline constexpr float TUTORIAL_STAMINA_REGEN_MULTIPLIER = 12.0f;
 
 inline constexpr float OPPONENT_MELEE_KNOCKBACK = 6.0f;
@@ -560,6 +558,31 @@ inline constexpr const char* HUD_FONT_FAMILY = NORMAL_FONT_FAMILY;
 inline constexpr int MAKOTO_CELL_SIZE = 256;
 inline constexpr int NARUKAMI_CELL_SIZE = 256;
 inline constexpr int GAME_ANIMATION_FPS = 60;
+
+// Lecture 5: shared sprite frame accumulators (one-shot and looping animations).
+inline bool AdvanceOneShotFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int maxFrame) {
+    if (maxFrame <= 0 || ticksPerFrame <= 0) return false;
+    accumulator += steps;
+    while (accumulator >= ticksPerFrame) {
+        accumulator -= ticksPerFrame;
+        if (frame < maxFrame - 1) {
+            frame++;
+        }
+        else {
+            return true;
+        }
+    }
+    return false;
+}
+
+inline void AdvanceLoopFrame(int& accumulator, int& frame, int steps, int ticksPerFrame, int frameCount) {
+    if (frameCount <= 0) return;
+    accumulator += steps;
+    while (accumulator >= ticksPerFrame) {
+        accumulator -= ticksPerFrame;
+        frame = (frame + 1) % frameCount;
+    }
+}
 inline constexpr int MAKOTO_LOOP_TICKS_SLOW = 4;
 inline constexpr int MAKOTO_LOOP_TICKS_FAST = 3;
 inline constexpr int MAKOTO_IDLE_PLAY_TICKS = 6;
@@ -989,6 +1012,8 @@ void DrawDebugCircleRing(LPD3DXSPRITE sprite, float cx, float cy, float radius, 
 // Main-menu physics demo (Jonathan): two colliding balls with force-based movement.
 inline constexpr const char* BALL1_ICON_PATH = "assets/background/persona5Icon.png";
 inline constexpr const char* BALL2_ICON_PATH = "assets/background/persona4Icon.png";
+inline constexpr const char* MAINMENU_MUSIC_FILE = "assets/sound/mainmenu_music.mp3";
+inline constexpr const char* BATTLE_MUSIC_FILE = "assets/sound/battle_music.mp3";
 inline constexpr const char* BALL_COLLISION_SOUND = "assets/sound/ball_collision_sound.wav";
 inline constexpr float BALL_RADIUS = 64.0f;
 inline constexpr float BALL_DISPLAY_SIZE = 128.0f;
