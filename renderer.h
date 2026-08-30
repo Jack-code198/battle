@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // =============================================================================
 // 2D rendering module (BMCS2224) — Direct3D 9 + ID3DXSprite.

@@ -1,7 +1,7 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 #include "CharacterId.h"
-#include "physics.h"
+#include "Physics.h"
 
 // Base fighter for the OO game framework (BMCS2224).
 // Makoto / Joker / Narukami inherit this and override Update / Render / combat hooks.

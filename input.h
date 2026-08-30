@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // =============================================================================
 // Input module (BMCS2224) — OO DirectInput wrapper + window helpers.

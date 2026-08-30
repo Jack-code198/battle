@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "Config.h"
 
 // =============================================================================
 // Sound module (BMCS2224) — OO FMOD wrapper.

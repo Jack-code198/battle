@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Thin wrapper around ID3DXFont for HUD / debug text (BMCS2224 Font requirement).
 class FontRenderer {
@@ -19,6 +19,15 @@ public:
         D3DCOLOR color,
         bool rightAlign = false,
         float rightEdgeX = 0.0f) const;
+
+    // Center text within a screen rectangle (game over / titles).
+    void DrawTextCenteredInRect(
+        const char* text,
+        LONG left,
+        LONG top,
+        LONG right,
+        LONG bottom,
+        D3DCOLOR color) const;
 
     ID3DXFont* GetFont() const { return font; }
     bool IsReady() const { return font != nullptr; }

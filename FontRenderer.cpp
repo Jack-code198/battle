@@ -91,6 +91,26 @@ void FontRenderer::DrawTextA(
     }
 }
 
+void FontRenderer::DrawTextCenteredInRect(
+    const char* text,
+    LONG left,
+    LONG top,
+    LONG right,
+    LONG bottom,
+    D3DCOLOR color) const
+{
+    if (!font || !text) return;
+
+    RECT rect = { left, top, right, bottom };
+    font->DrawTextA(
+        nullptr,
+        text,
+        -1,
+        &rect,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
+        color);
+}
+
 static FontRenderer* g_GameFontRenderer = nullptr;
 
 void BindGameFontRenderer(FontRenderer* renderer) {

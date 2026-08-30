@@ -1,27 +1,27 @@
 #include <stdio.h>
 #include <cstring>
 #include <windows.h>
-#include "config.h"
-#include "input.h"
-#include "game_logic.h"
-#include "renderer.h"
+#include "Config.h"
+#include "Input.h"
+#include "GameLogic.h"
+#include "Renderer.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
 #include "player/yosuke/Yosuke.h"
-#include "audio.h"
-#include "ui.h"
+#include "Audio.h"
+#include "UI.h"
 #include "MainMenu.h"
-#include "optionsMenu.h"
-#include "pauseMenu.h"
-#include "stageSelect.h"
-#include "playerSelect.h"
-#include "collision.h"
+#include "OptionMenu.h"
+#include "PauseMenu.h"
+#include "StageSelect.h"
+#include "PlayerSelect.h"
+#include "Collision.h"
 #include "FontRenderer.h"
 #include "GameStateStack.h"
-#include "battleBackground.h"
-#include "creditsScreen.h"
-#include "miniGame.h"
+#include "BattleBackground.h"
+#include "CreditsScreen.h"
+#include "MiniGame.h"
 
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 768;
@@ -56,6 +56,7 @@ AttackData downAttackHitbox = {
 // --- Gamestate Management (stack: push/pop, game-over retry) ---
 static GameStateStack g_StateStack;
 static FontRenderer g_FontRenderer;
+static FontRenderer g_GameOverFontRenderer;
 static int menuChoice = 0;
 static int optionsChoice = 0;
 static int creditsChoice = 0;
@@ -96,6 +97,7 @@ static bool InitRequirementSystems(LPDIRECT3DDEVICE9 device) {
     // Font / FontRenderer
     BindGameFontRenderer(&g_FontRenderer);
     g_FontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, 20);
+    g_GameOverFontRenderer.Create(device, HUD_FONT_FILE, HUD_FONT_FAMILY, GAME_OVER_TITLE_FONT_HEIGHT);
 
     // Collision detection (AABB / OBB / swept / overlap) — wired from int main.
     // Fighter gravity uses PhysicsBody in ApplyPhysicsGravitySteps; Mini Game uses Ball.
@@ -167,7 +169,9 @@ static void RenderPauseScreen() {
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        g_SuppressBattleDebugOverlay = true;
         RenderBattleSceneContents();
+        g_SuppressBattleDebugOverlay = false;
         pauseMenuScreen(pauseChoice);
         ApplyBrightnessOverlay();
         g_pD3DDevice->EndScene();
@@ -182,7 +186,9 @@ static void RenderMoveListScreen() {
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
+        g_SuppressBattleDebugOverlay = true;
         RenderBattleSceneContents();
+        g_SuppressBattleDebugOverlay = false;
         moveListScreen(moveListChoice, g_SelectedP1);
         ApplyBrightnessOverlay();
         g_pD3DDevice->EndScene();
@@ -223,21 +229,39 @@ static void RenderGameOverScreen() {
     g_pD3DDevice->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
 
     if (SUCCEEDED(g_pD3DDevice->BeginScene())) {
-        if (g_FontRenderer.IsReady()) {
-            const char* title = g_BattlePlayer1Won ? "WIN" : "LOSE";
-            const D3DCOLOR titleColor = g_BattlePlayer1Won
-                ? D3DCOLOR_XRGB(255, 220, 64)
-                : D3DCOLOR_XRGB(255, 80, 80);
-            g_FontRenderer.DrawTextA(
+        const char* title = g_BattlePlayer1Won ? "WIN" : "LOSE";
+        const D3DCOLOR titleColor = g_BattlePlayer1Won
+            ? D3DCOLOR_XRGB(255, 220, 64)
+            : D3DCOLOR_XRGB(255, 80, 80);
+        const D3DCOLOR hintColor = D3DCOLOR_XRGB(255, 255, 255);
+        const LONG hintAreaTop = SCREEN_HEIGHT - GAME_OVER_HINT_AREA_HEIGHT;
+
+        if (g_GameOverFontRenderer.IsReady()) {
+            g_GameOverFontRenderer.DrawTextCenteredInRect(
                 title,
-                GAME_OVER_TITLE_X,
-                GAME_OVER_TITLE_Y,
+                0,
+                0,
+                SCREEN_WIDTH,
+                hintAreaTop,
                 titleColor);
-            g_FontRenderer.DrawTextA(
-                "R = Retry   ESC = Main Menu",
-                GAME_OVER_HINT_X,
-                GAME_OVER_HINT_Y,
-                D3DCOLOR_XRGB(255, 255, 255));
+        }
+
+        if (g_FontRenderer.IsReady()) {
+            const LONG hintLineHeight = 36;
+            g_FontRenderer.DrawTextCenteredInRect(
+                "R = Retry",
+                0,
+                hintAreaTop,
+                SCREEN_WIDTH,
+                hintAreaTop + hintLineHeight,
+                hintColor);
+            g_FontRenderer.DrawTextCenteredInRect(
+                "ESC = Main Menu",
+                0,
+                hintAreaTop + hintLineHeight,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                hintColor);
         }
         g_pD3DDevice->EndScene();
     }
@@ -264,6 +288,7 @@ static void FinishPendingBattleSetup() {
         ResetBattleHud(g_Player1->GetMaxHealth(), g_Player2->GetMaxHealth());
     }
     if (IsTutorialBattleMode()) {
+        RefillTutorialFighters();
         ResetTutorialGuide();
     }
     ResetBattleParallaxScroll();
@@ -486,7 +511,6 @@ int main(int argc, char* argv[]) {
             BeginBattleLogicFrame();
             if (g_Player1) g_Player1->Update();
             if (g_Player2) g_Player2->Update();
-            ApplyTutorialModePerks(g_GameTimer.GetLastFramesToUpdate());
             UpdateTutorialGuide(g_GameTimer.GetLastFramesToUpdate());
             if (g_Player1 && g_Player2 && !IsBattleEndSequence()) {
                 EnforceFighterGroundSeparation(*g_Player1, *g_Player2);
@@ -496,6 +520,7 @@ int main(int argc, char* argv[]) {
             UpdateBattleParallaxScroll();
             EnsureBattleResultPosesApplied();
             Render();
+            ApplyTutorialModePerks(g_GameTimer.GetLastFramesToUpdate());
             CheckBattleGameOver();
 
             const bool escPressed = IsUiKeyDown(DIK_ESCAPE);
@@ -632,6 +657,7 @@ int main(int argc, char* argv[]) {
     CleanUpPauseMenuTextures();
     CleanUpStageTextures();
     DestroyFighters();
+    g_GameOverFontRenderer.Release();
     g_FontRenderer.Release();
     g_SoundManager.Shutdown();
     CleanUpD3D();

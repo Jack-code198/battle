@@ -1,30 +1,114 @@
-#include "game_logic.h"
-#include "tutorial_guide.h"
-#include "collision.h"
-#include "physics.h"
-#include "input.h"
+#include "GameLogic.h"
+#include "TutorialGuide.h"
+#include "Collision.h"
+#include "Physics.h"
+#include "Input.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
 #include "player/yosuke/Yosuke.h"
-#include "ui.h"
+#include "UI.h"
 
 static void ApplyBattleResultPoses();
 bool IsBattleCombatActive();
 bool IsBattleEndSequence();
 
+static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps);
+
+struct TutorialRefillTracker {
+    int delayFrames = 0;
+    int lastHealth = -1;
+    int lastSp = -1;
+    float lastStamina = -1.0f;
+};
+
+static TutorialRefillTracker g_TutorialRefillP1;
+static TutorialRefillTracker g_TutorialRefillP2;
+
+static void ResetTutorialRefillTracker(TutorialRefillTracker& tracker, const Fighter* fighter) {
+    tracker.delayFrames = 0;
+    if (fighter) {
+        tracker.lastHealth = fighter->GetHealth();
+        tracker.lastSp = fighter->GetSp();
+        tracker.lastStamina = fighter->GetStamina();
+    }
+    else {
+        tracker.lastHealth = -1;
+        tracker.lastSp = -1;
+        tracker.lastStamina = -1.0f;
+    }
+}
+
+static void ResetTutorialRefillTrackers() {
+    ResetTutorialRefillTracker(g_TutorialRefillP1, g_Player1);
+    ResetTutorialRefillTracker(g_TutorialRefillP2, g_Player2);
+}
+
+static void ProcessTutorialRefill(Fighter& fighter, TutorialRefillTracker& tracker, int steps) {
+    const int health = fighter.GetHealth();
+    const int maxHealth = fighter.GetMaxHealth();
+    const int sp = fighter.GetSp();
+    const int maxSp = fighter.GetMaxSp();
+    const float stamina = fighter.GetStamina();
+    const float maxStamina = fighter.GetMaxStamina();
+
+    const bool depleted = health < maxHealth || sp < maxSp || stamina + 0.001f < maxStamina;
+    if (!depleted) {
+        ResetTutorialRefillTracker(tracker, &fighter);
+        return;
+    }
+
+    const bool newDepletion =
+        tracker.lastHealth < 0 ||
+        health < tracker.lastHealth ||
+        sp < tracker.lastSp ||
+        stamina + 0.001f < tracker.lastStamina;
+
+    if (newDepletion) {
+        tracker.delayFrames = TUTORIAL_INFINITE_REFILL_DELAY_FRAMES;
+    }
+
+    tracker.lastHealth = health;
+    tracker.lastSp = sp;
+    tracker.lastStamina = stamina;
+
+    tracker.delayFrames -= steps;
+    if (tracker.delayFrames <= 0) {
+        ApplyTutorialPerksForFighter(fighter, steps);
+        ResetTutorialRefillTracker(tracker, &fighter);
+    }
+}
+
 FrameTimer g_GameTimer;
 Fighter* g_Player1 = nullptr;
 Fighter* g_Player2 = nullptr;
 bool g_ShowDebugHitboxes = false;
+bool g_SuppressBattleDebugOverlay = false;
 
 CharacterId g_SelectedP1 = Char_Makoto;
 CharacterId g_SelectedP2 = Char_Joker;
 BattleMode g_SelectedBattleMode = BattleMode::Battle;
 static bool g_TutorialCpuAiEnabled = false;
+static bool g_TutorialInfiniteHpSpEnabled = true;
 
 bool IsTutorialCpuAiEnabled() {
     return g_TutorialCpuAiEnabled;
+}
+
+bool IsTutorialInfiniteHpSpEnabled() {
+    return g_TutorialInfiniteHpSpEnabled;
+}
+
+void ToggleTutorialInfiniteHpSp() {
+    if (!IsTutorialBattleMode()) return;
+    g_TutorialInfiniteHpSpEnabled = !g_TutorialInfiniteHpSpEnabled;
+    if (g_TutorialInfiniteHpSpEnabled) {
+        RefillTutorialFighters();
+    }
+}
+
+void ResetTutorialInfiniteHpSp() {
+    g_TutorialInfiniteHpSpEnabled = true;
 }
 
 bool IsTutorialSandbagMode() {
@@ -38,6 +122,7 @@ void ToggleTutorialCpuAi() {
 
 void ResetTutorialCpuAi() {
     g_TutorialCpuAiEnabled = false;
+    ResetTutorialInfiniteHpSp();
 }
 
 bool IsTutorialBattleMode() {
@@ -83,7 +168,11 @@ static void TryTriggerHitComboWin() {
 void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage) {
     if (appliedDamage <= 0) return;
 
-    if (IsTutorialBattleMode() || !IsBattleCombatActive()) return;
+    if (IsTutorialBattleMode()) {
+        return;
+    }
+
+    if (!IsBattleCombatActive()) return;
     if (!g_DamageAttacker || g_DamageAttacker->GetPlayerSlot() == victim.GetPlayerSlot()) return;
 
     if (g_DamageAttacker->IsHumanControlled() && !victim.IsHumanControlled()) {
@@ -103,27 +192,27 @@ void BeginBattleLogicFrame() {
 
 static void ApplyTutorialPerksForFighter(Fighter& fighter, int steps) {
     (void)steps;
-    if (!fighter.IsHumanControlled()) return;
 
-    const int slot = fighter.GetPlayerSlot();
+    fighter.health = fighter.maxHealth;
+    fighter.isDead = false;
     fighter.sp = fighter.maxSp;
     fighter.RefillStamina();
+}
 
-    if (fighter.health < fighter.maxHealth || fighter.isDead) {
-        fighter.health = fighter.maxHealth;
-        fighter.isDead = false;
-        if (slot >= 0 && slot <= 1) {
-            SyncBattleHudHealth(slot + 1, fighter.health, fighter.maxHealth);
-        }
-    }
+void RefillTutorialFighters() {
+    if (!IsTutorialBattleMode() || !IsTutorialInfiniteHpSpEnabled()) return;
+    if (g_Player1) ApplyTutorialPerksForFighter(*g_Player1, 1);
+    if (g_Player2) ApplyTutorialPerksForFighter(*g_Player2, 1);
+    ResetTutorialRefillTrackers();
 }
 
 void ApplyTutorialModePerks(int steps) {
-    if (!IsTutorialBattleMode() || !IsBattleCombatActive() || IsBattleEndSequence()) return;
+    if (!IsTutorialBattleMode() || IsBattleEndSequence()) return;
+    if (!IsTutorialInfiniteHpSpEnabled()) return;
     if (steps <= 0) steps = BATTLE_LOGIC_STEPS_PER_FRAME;
 
-    if (g_Player1) ApplyTutorialPerksForFighter(*g_Player1, steps);
-    if (g_Player2) ApplyTutorialPerksForFighter(*g_Player2, steps);
+    if (g_Player1) ProcessTutorialRefill(*g_Player1, g_TutorialRefillP1, steps);
+    if (g_Player2) ProcessTutorialRefill(*g_Player2, g_TutorialRefillP2, steps);
 }
 
 void PositionFightersAtDefaultSpawn() {
@@ -229,6 +318,31 @@ void PullEnemyForUltimate(Fighter& attacker, Fighter& enemy, bool pullToGround) 
 
     enemy.UpdateScaledHurtbox();
     ClampFighterAgainstOpponent(enemy, attacker);
+}
+
+void SnapFighterStandForUltimate(Fighter& fighter) {
+    fighter.isHit = false;
+    fighter.hitStunTimer = 0;
+    fighter.position.y = CHARACTER_GROUND_Y;
+
+    switch (fighter.GetCharacterId()) {
+    case Char_Joker:
+        static_cast<Joker&>(fighter).SnapStandForUltimate();
+        break;
+    case Char_Makoto:
+        static_cast<Makoto&>(fighter).SnapStandForUltimate();
+        break;
+    case Char_Narukami:
+        static_cast<Narukami&>(fighter).SnapStandForUltimate();
+        break;
+    case Char_Yosuke:
+        static_cast<Yosuke&>(fighter).SnapStandForUltimate();
+        break;
+    default:
+        break;
+    }
+
+    fighter.UpdateScaledHurtbox();
 }
 
 static void ClampFighterPushX(Fighter& fighter) {

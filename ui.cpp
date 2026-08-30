@@ -1,7 +1,7 @@
-#include "ui.h"
-#include "tutorial_guide.h"
-#include "renderer.h"
-#include "game_logic.h"
+#include "UI.h"
+#include "TutorialGuide.h"
+#include "Renderer.h"
+#include "GameLogic.h"
 #include "player/CharacterId.h"
 #include <algorithm>
 
@@ -607,6 +607,14 @@ void SyncBattleHudHealth(int playerSlot, int health, int maxHealth) {
     }
 }
 
+void ForceSyncBattleHudHealth(int playerSlot, int health, int maxHealth) {
+    (void)maxHealth;
+    HudHealthTracker& tracker = (playerSlot == 1) ? g_P1HealthTrack : g_P2HealthTrack;
+    tracker.displayHealth = (float)health;
+    tracker.syncedHealth = health;
+    tracker.chipHoldFrames = 0;
+}
+
 void DrawBattleHud(
     LPD3DXSPRITE sprite,
     int p1Health,
@@ -786,18 +794,9 @@ void DrawBattleDebugHintOverlay() {
     if (!IsBattleCombatActive() || IsBattleEndSequence()) return;
     if (!LoadTutorialFont() || !g_TutorialFont) return;
 
-    const bool tutorial = IsTutorialBattleMode();
-    const char* hint = nullptr;
-    if (tutorial) {
-        hint = g_ShowDebugHitboxes
-            ? "DEBUG: hitboxes ON (B to hide) | Tutorial: infinite HP & SP"
-            : "B: hitbox debug | Tutorial: infinite HP & SP";
-    }
-    else {
-        hint = g_ShowDebugHitboxes
-            ? "DEBUG: hitboxes ON (B to hide)"
-            : "B: hitbox debug";
-    }
+    const char* hint = g_ShowDebugHitboxes
+        ? "DEBUG: hitboxes ON (B to hide)"
+        : "B: hitbox";
 
     RECT rect = {
         10,

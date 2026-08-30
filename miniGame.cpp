@@ -1,6 +1,6 @@
-#include "miniGame.h"
-#include "input.h"
-#include "audio.h"
+#include "MiniGame.h"
+#include "Input.h"
+#include "Audio.h"
 #include "Ball.h"
 
 static ID3DXFont* g_MiniGameTitleFont = nullptr;
@@ -37,8 +37,8 @@ static bool EnsureMiniGameFonts() {
     if (!CreateMiniGameFont(NORMAL_FONT_FAMILY, 42, &g_MiniGameTitleFont)) {
         CreateMiniGameFont("Arial", 42, &g_MiniGameTitleFont);
     }
-    if (!CreateMiniGameFont(NORMAL_FONT_FAMILY, 20, &g_MiniGameHintFont)) {
-        CreateMiniGameFont("Arial", 20, &g_MiniGameHintFont);
+    if (!CreateMiniGameFont(NORMAL_FONT_FAMILY, 14, &g_MiniGameHintFont)) {
+        CreateMiniGameFont("Arial", 14, &g_MiniGameHintFont);
     }
 
     return g_MiniGameTitleFont && g_MiniGameHintFont;
@@ -129,10 +129,11 @@ static void RenderMiniGameFrame() {
     }
 
     if (g_MiniGameHintFont) {
-        RECT hintRect = { 40, SCREEN_HEIGHT - 72, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 16 };
+        RECT hintRect = { 48, SCREEN_HEIGHT - 56, SCREEN_WIDTH - 48, SCREEN_HEIGHT - 12 };
         g_MiniGameHintFont->DrawTextA(
             spriteBrush,
-            "Ball 1: Arrows (Up thrust, Left/Right rotate)    Ball 2: WASD (W thrust, A/D rotate)\r\nCollision SFX pans left/right by screen position (left side = left ear). Esc: main menu",
+            "Ball 1: Arrows (Up thrust, Left/Right rotate)   Ball 2: WASD (W thrust, A/D rotate)\r\n"
+            "Collision SFX pans by ball X (left = left ear). Esc: main menu",
             -1,
             &hintRect,
             DT_CENTER | DT_BOTTOM,

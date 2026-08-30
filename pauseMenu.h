@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 #include "player/CharacterId.h"
 
 // Battle pause overlay (Resume / Move List / Options / Exit) and the blank

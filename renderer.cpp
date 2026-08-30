@@ -1,13 +1,13 @@
-#include "renderer.h"
+#include "Renderer.h"
 #include "FontRenderer.h"
-#include "game_logic.h"
-#include "ui.h"
-#include "optionsMenu.h"
-#include "pauseMenu.h"
+#include "GameLogic.h"
+#include "UI.h"
+#include "OptionMenu.h"
+#include "PauseMenu.h"
 #include "MainMenu.h"
-#include "stageSelect.h"
-#include "battleBackground.h"
-#include "playerSelect.h"
+#include "StageSelect.h"
+#include "BattleBackground.h"
+#include "PlayerSelect.h"
 #include "player/makoto/Makoto.h"
 #include "player/joker/Joker.h"
 #include "player/narukami/Narukami.h"
@@ -244,7 +244,8 @@ void RenderBattleSceneContents() {
     if (!ultimateActive) {
         DrawBattleParallaxBackground(spriteBrush);
     }
-    else if (ultimateActive) {
+    else {
+        DrawBattleParallaxBackground(spriteBrush);
         DrawDebugRect(
             spriteBrush,
             0.0f,
@@ -265,7 +266,7 @@ void RenderBattleSceneContents() {
         leftFighter->RenderSkillBackdropBeforeOpponent(spriteBrush);
         rightFighter->Render(spriteBrush);
 
-        if (g_ShowDebugHitboxes) {
+        if (g_ShowDebugHitboxes && !g_SuppressBattleDebugOverlay) {
             g_Player1->RenderDebugHitbox(spriteBrush);
             g_Player2->RenderDebugHitbox(spriteBrush);
         }

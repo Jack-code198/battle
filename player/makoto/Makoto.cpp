@@ -1,10 +1,10 @@
 #include "Makoto.h"
-#include "../../ai.h"
-#include "../../config.h"
-#include "../../renderer.h"
-#include "../../game_logic.h"
-#include "../../input.h"
-#include "../../audio.h"
+#include "../../AI.h"
+#include "../../Config.h"
+#include "../../Renderer.h"
+#include "../../GameLogic.h"
+#include "../../Input.h"
+#include "../../Audio.h"
 #include <cmath>
 #include <float.h>
 #include <optional>
@@ -1986,6 +1986,17 @@ bool Makoto::IsPlayingResultPose() const {
 
 bool Makoto::IsInKnockdownReaction() const {
     return isHit || currentState == DAMAGE || currentState == RECOVER;
+}
+
+void Makoto::SnapStandForUltimate() {
+    isHit = false;
+    hitStunTimer = 0;
+    damageGroundHold = 0;
+    verticalVelocity = 0.0f;
+    position.y = CHARACTER_GROUND_Y;
+    if (currentState == DAMAGE || currentState == RECOVER) {
+        FinishSandbagRecover();
+    }
 }
 
 bool Makoto::IsInCombatAction() const {

@@ -1,7 +1,7 @@
-#include "stageSelect.h"
-#include "battleBackground.h"
-#include "input.h"
-#include "audio.h"
+#include "StageSelect.h"
+#include "BattleBackground.h"
+#include "Input.h"
+#include "Audio.h"
 #include <cstdio>
 
 StageInfo g_Stages[] = {

@@ -1,8 +1,8 @@
-#include "input.h"
-#include "renderer.h"
-#include "game_logic.h"
-#include "audio.h"
-#include "ui.h"
+#include "Input.h"
+#include "Renderer.h"
+#include "GameLogic.h"
+#include "Audio.h"
+#include "UI.h"
 #include <cstring>
 
 // =============================================================================

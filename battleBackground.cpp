@@ -1,5 +1,5 @@
-#include "battleBackground.h"
-#include "game_logic.h"
+#include "BattleBackground.h"
+#include "GameLogic.h"
 #include "player/Fighter.h"
 #include <d3dx9.h>
 #include <cmath>

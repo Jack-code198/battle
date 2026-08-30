@@ -1,7 +1,7 @@
-#include "pauseMenu.h"
-#include "input.h"
-#include "audio.h"
-#include "game_logic.h"
+#include "PauseMenu.h"
+#include "Input.h"
+#include "Audio.h"
+#include "GameLogic.h"
 #include <cstdio>
 
 static ID3DXFont* g_PauseTitleFont = nullptr;
@@ -19,10 +19,11 @@ static bool g_PauseEnterHeld = false;
 static bool g_PauseEscHeld = false;
 static bool g_PauseClickHeld = false;
 
-static const int PAUSE_MAX_OPTIONS = 6;
+static const int PAUSE_MAX_OPTIONS = 7;
 static const int PAUSE_BATTLE_OPTION_COUNT = 5;
-static const int PAUSE_TUTORIAL_OPTION_COUNT = 6;
+static const int PAUSE_TUTORIAL_OPTION_COUNT = 7;
 static const int PAUSE_AI_TOGGLE_INDEX = 3;
+static const int PAUSE_INFINITE_HP_SP_TOGGLE_INDEX = 4;
 
 static const char* g_PauseBattleOptions[PAUSE_BATTLE_OPTION_COUNT] = {
     "Resume",
@@ -66,7 +67,7 @@ static const D3DCOLOR PAUSE_COLOR_MUTED = D3DCOLOR_XRGB(180, 180, 180);
 
 // Panel is intentionally small/centered so the battle stays visible behind it.
 static const float PAUSE_PANEL_WIDTH = 420.0f;
-static const float PAUSE_PANEL_HEIGHT = 450.0f;
+static const float PAUSE_PANEL_HEIGHT = 500.0f;
 static const float PAUSE_FRAME_THICKNESS = 2.0f;
 static const LONG PAUSE_TITLE_HEIGHT = 60;
 static const int PAUSE_ITEM_HEIGHT = 46;
@@ -296,8 +297,14 @@ static void GetPauseOptionLabel(int index, char* outText, int outSize) {
         case 3:
             sprintf_s(outText, outSize, IsTutorialCpuAiEnabled() ? "AI: On" : "AI: Off");
             return;
-        case 4: sprintf_s(outText, outSize, "Player Select"); return;
-        case 5: sprintf_s(outText, outSize, "Exit to Main Menu"); return;
+        case 4:
+            sprintf_s(
+                outText,
+                outSize,
+                IsTutorialInfiniteHpSpEnabled() ? "HP/SP: On" : "HP/SP: Off");
+            return;
+        case 5: sprintf_s(outText, outSize, "Player Select"); return;
+        case 6: sprintf_s(outText, outSize, "Exit to Main Menu"); return;
         default: outText[0] = '\0'; return;
         }
     }
@@ -312,9 +319,8 @@ static void GetPauseOptionLabel(int index, char* outText, int outSize) {
 
 static int MapPauseSelectionToChoice(int selection) {
     if (IsTutorialBattleMode()) {
-        if (selection == PAUSE_AI_TOGGLE_INDEX) return 4;
-        if (selection == 4) return 5;
-        if (selection == 5) return 6;
+        if (selection == 5) return 5;
+        if (selection == 6) return 6;
     }
     return selection + 1;
 }
@@ -417,6 +423,10 @@ void pauseMenuScreen(int& choice) {
             }
             choice = 0;
         }
+        else if (IsTutorialBattleMode() && g_PauseSelection == PAUSE_INFINITE_HP_SP_TOGGLE_INDEX) {
+            ToggleTutorialInfiniteHpSp();
+            choice = 0;
+        }
         else {
             choice = MapPauseSelectionToChoice(g_PauseSelection);
         }
@@ -440,6 +450,10 @@ void pauseMenuScreen(int& choice) {
                 g_Player2->RememberSpawnAnchor();
                 g_Player2->UpdateScaledHurtbox();
             }
+            choice = 0;
+        }
+        else if (IsTutorialBattleMode() && g_PauseSelection == PAUSE_INFINITE_HP_SP_TOGGLE_INDEX) {
+            ToggleTutorialInfiniteHpSp();
             choice = 0;
         }
         else {

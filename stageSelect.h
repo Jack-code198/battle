@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Stage select screen: preview textures, keyboard/mouse navigation, confirm/back.
 

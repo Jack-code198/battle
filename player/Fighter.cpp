@@ -1,5 +1,5 @@
 #include "Fighter.h"
-#include "../game_logic.h"
+#include "../GameLogic.h"
 
 Fighter::Fighter()
     : characterId(Char_Makoto)
@@ -104,7 +104,11 @@ void Fighter::TryApplyHorizontalDelta(float deltaX) {
 
 bool Fighter::TryConsumeSp(int cost) {
     if (cost <= 0) return true;
-    if (IsTutorialBattleMode() && humanControlled) return true;
+    if (IsTutorialBattleMode() && IsTutorialInfiniteHpSpEnabled()) {
+        sp -= cost;
+        if (sp < 0) sp = 0;
+        return true;
+    }
     if (sp < cost) return false;
     sp -= cost;
     return true;
@@ -162,7 +166,11 @@ bool Fighter::DrainStaminaWhileRunning(int animSteps) {
 
 void Fighter::RegenStamina(int animSteps) {
     if (animSteps <= 0) return;
-    RestoreStamina(STAMINA_REGEN_PER_STEP * (float)animSteps);
+    float regenRate = STAMINA_REGEN_PER_STEP;
+    if (IsTutorialBattleMode() && IsTutorialInfiniteHpSpEnabled()) {
+        regenRate *= TUTORIAL_STAMINA_REGEN_MULTIPLIER;
+    }
+    RestoreStamina(regenRate * (float)animSteps);
 }
 
 void Fighter::ApplySlotSpawnDefaults() {

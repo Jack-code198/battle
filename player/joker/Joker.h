@@ -77,6 +77,10 @@ private:
     float verticalVelocity;
     bool hitThisAttack;
     bool attackButtonHeld;
+    bool eihaButtonHeld;
+    bool eigaonButtonHeld;
+    bool neutralSpecialButtonHeld;
+    bool allOutButtonHeld;
     bool dodgeForward;
     bool skillHit;
     int skillEffectFrame;
@@ -103,6 +107,7 @@ private:
     void UpdateHuman(int steps);
     void CheckAttackCollision(Fighter& enemy);
     void UpdateSkillHits(Fighter& enemy, int steps);
+    void UpdateAllOutEffectHit(Fighter& enemy, int steps);
     void BeginPersonaSummonIntro(int pendingSkill);
     void BeginEihaEigaonSkill(int state);
     void UpdateEihaEigaonSkill(Fighter& enemy, int steps);
@@ -112,6 +117,7 @@ private:
     void DrawArseneSprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, D3DCOLOR color) const;
     void DrawEffectSprite(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, const D3DXVECTOR3& pos, float bodyHeight, float feetY, D3DCOLOR color) const;
     void DrawSkillEffectOnOpponent(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, D3DCOLOR color) const;
+    void DrawAllOutEffectOnOpponent(LPD3DXSPRITE sprite, struct JokerTexture& tex, int frame, D3DCOLOR color) const;
 
 public:
     Joker();
@@ -129,6 +135,7 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInKnockdownReaction() const override;
+    void SnapStandForUltimate();
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;

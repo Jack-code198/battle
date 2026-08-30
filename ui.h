@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 bool LoadHudTextures();
 void CleanUpHudTextures();
@@ -7,6 +7,7 @@ void NotifyHudDeviceLost();
 void NotifyHudDeviceReset();
 void ResetBattleHud(int p1MaxHealth, int p2MaxHealth);
 void SyncBattleHudHealth(int playerSlot, int health, int maxHealth);
+void ForceSyncBattleHudHealth(int playerSlot, int health, int maxHealth);
 void DrawBattleHud(
     LPD3DXSPRITE sprite,
     int p1Health,

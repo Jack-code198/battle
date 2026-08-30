@@ -1,5 +1,5 @@
 #include "FrameTimer.h"
-#include "config.h"
+#include "Config.h"
 
 void FrameTimer::Init(int fps)
 {

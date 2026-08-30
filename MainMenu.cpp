@@ -1,6 +1,6 @@
 #include "MainMenu.h"
-#include "input.h"
-#include "audio.h"
+#include "Input.h"
+#include "Audio.h"
 
 static LPDIRECT3DTEXTURE9 menuBackground = NULL;
 static ID3DXFont* menuFont = nullptr;

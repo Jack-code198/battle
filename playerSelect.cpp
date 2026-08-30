@@ -1,7 +1,7 @@
-#include "playerSelect.h"
-#include "game_logic.h"
-#include "input.h"
-#include "audio.h"
+#include "PlayerSelect.h"
+#include "GameLogic.h"
+#include "Input.h"
+#include "Audio.h"
 #include "player/CharacterId.h"
 #include <cstdio>
 

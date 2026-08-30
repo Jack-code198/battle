@@ -1,6 +1,6 @@
 #pragma once
 #include "../Fighter.h"
-#include "../../config.h"
+#include "../../Config.h"
 
 // Yosuke Hanamura fighter (OO subclass of Fighter).
 // Makoto-style locomotion with Jiraiya persona skills.
@@ -56,6 +56,7 @@ private:
     bool showEffect;
     D3DXVECTOR3 jiraiyaPos;
     D3DXVECTOR3 effectPos;
+    D3DXVECTOR3 flyingKunaiTargetPos;
 
     int noInputFrames;
     int idleWaitFrames;
@@ -65,11 +66,17 @@ private:
     int spaceChordBuffer;
     bool spaceWasDown;
     bool crescentButtonHeld;
+    bool personaKey1Held;
+    bool personaKey2Held;
+    bool personaKey3Held;
+    bool personaKey4Held;
+    bool moonsaultButtonHeld;
 
     void EnterState(int state);
     void CompleteToStance();
     void BeginPersonaSummon();
     void BeginGarudyne();
+    void BeginFlyingKunai(Fighter* opponent);
     void UpdateHuman(int steps);
     void UpdateSandbag(int steps);
     void UpdateIntro(int steps);
@@ -85,6 +92,7 @@ private:
     void TickSpaceChordBuffer(bool isJumpPressed, int steps);
     bool IsHoldingAwayInput() const;
     void UpdateLiveSkillTargets(Fighter& enemy);
+    void UpdateFlyingKunaiProjectile(Fighter& enemy, int steps);
 
 public:
     Yosuke();
@@ -102,6 +110,7 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInKnockdownReaction() const override;
+    void SnapStandForUltimate();
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;

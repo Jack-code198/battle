@@ -1,6 +1,6 @@
 #pragma once
 #include "../Fighter.h"
-#include "../../config.h"
+#include "../../Config.h"
 
 // Makoto fighter (OO subclass of Fighter).
 // Owns Makoto animation state, melee/persona skills, gravity jump, and sprite rendering.
@@ -126,6 +126,7 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInKnockdownReaction() const override;
+    void SnapStandForUltimate();
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;

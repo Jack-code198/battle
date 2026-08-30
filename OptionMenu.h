@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Options screen: simple vertical list (Music toggle, Back). Reached from
 // the main menu's "Options" entry.

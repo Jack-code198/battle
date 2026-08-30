@@ -11,7 +11,7 @@
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")
 
-#include "collision.h"
+#include "Collision.h"
 
 inline void LogCollisionDetected(const char* detail) {
     if (!detail || !detail[0]) {
@@ -359,10 +359,8 @@ inline constexpr float HUD_NAME_TEXT_WIDTH = 220.0f;
 inline constexpr float HUD_NAME_TEXT_HEIGHT = 32.0f;
 inline constexpr float FONT_DRAW_LINE_HEIGHT = 64.0f;
 inline constexpr float FONT_DRAW_MAX_WIDTH = 800.0f;
-inline constexpr float GAME_OVER_TITLE_X = 360.0f;
-inline constexpr float GAME_OVER_TITLE_Y = 280.0f;
-inline constexpr float GAME_OVER_HINT_X = 300.0f;
-inline constexpr float GAME_OVER_HINT_Y = 340.0f;
+inline constexpr int GAME_OVER_TITLE_FONT_HEIGHT = 84;
+inline constexpr int GAME_OVER_HINT_AREA_HEIGHT = 110;
 
 // Round flow timing (logic steps @ ~60Hz).
 inline constexpr int BATTLE_COUNTDOWN_DIGIT_STEPS = 55;
@@ -412,6 +410,8 @@ inline constexpr bool JOKER_SANDBAG_MODE = true;
 inline constexpr bool OPPONENT_SANDBAG_MODE = JOKER_SANDBAG_MODE;
 // Training / no-death: use IsTutorialBattleMode() and ShouldFighterDieOnZeroHealth() at runtime.
 inline constexpr float TUTORIAL_STAMINA_REGEN_MULTIPLIER = 12.0f;
+// Tutorial infinite HP/SP: wait after last depletion before refilling (logic frames).
+inline constexpr int TUTORIAL_INFINITE_REFILL_DELAY_FRAMES = 42;
 
 inline constexpr float OPPONENT_MELEE_KNOCKBACK = 6.0f;
 inline constexpr float OPPONENT_SKILL_KNOCKBACK = 0.0f;
@@ -435,12 +435,13 @@ inline constexpr float NARUKAMI_IZANAGI_SCALE = 1.0f;
 inline constexpr float NARUKAMI_STANCE_FEET_Y = 52.0f;
 inline constexpr float NARUKAMI_RUN_FEET_Y = NARUKAMI_STANCE_FEET_Y;
 inline constexpr float NARUKAMI_CROUCH_FEET_Y = 44.0f;
-inline constexpr int JOKER_ALL_OUT_TICKS = 7;
-inline constexpr int JOKER_ALL_OUT_MEMBER_TICKS = 18;
-inline constexpr int JOKER_ALL_OUT_FINISH_TICKS = 14;
-inline constexpr int JOKER_ALL_OUT_FINISH_HOLD_FRAMES = 20;
+inline constexpr int JOKER_ALL_OUT_TICKS = 4;
+inline constexpr int JOKER_ALL_OUT_MEMBER_TICKS = 10;
+inline constexpr int JOKER_ALL_OUT_FINISH_TICKS = 8;
+inline constexpr int JOKER_ALL_OUT_FINISH_HOLD_FRAMES = 12;
 inline constexpr int JOKER_SKILL_TICKS = 5;
 inline constexpr int JOKER_TAUNT_TICKS = 7;
+inline constexpr float JOKER_ALL_OUT_EFFECT_SCALE = 3.5f;
 // All-out pose lift (pixels up from ground anchor).
 inline constexpr float JOKER_ALL_OUT_LIFT_Y = 28.0f;
 // Member portraits sit in the top of the cell; high feet keeps the full 3x3 above ground at normal Joker scale.
@@ -757,6 +758,32 @@ inline void ApplyTextureColorKey(LPDIRECT3DTEXTURE9 tex, BYTE keyR, BYTE keyG, B
 
 inline void ApplyJokerColorKey(LPDIRECT3DTEXTURE9 tex) {
     ApplyTextureColorKey(tex, JOKER_COLORKEY_R, JOKER_COLORKEY_G, JOKER_COLORKEY_B);
+}
+
+// VFX sheets (all-out slashes, Agi-style blasts) use #000000 BG instead of Joker magenta.
+inline void ApplyBlackBackgroundColorKey(LPDIRECT3DTEXTURE9 tex, int tolerance = 8) {
+    if (!tex) return;
+
+    D3DSURFACE_DESC desc;
+    tex->GetLevelDesc(0, &desc);
+
+    D3DLOCKED_RECT rect;
+    if (FAILED(tex->LockRect(0, &rect, NULL, 0))) return;
+
+    for (UINT y = 0; y < desc.Height; y++) {
+        DWORD* row = (DWORD*)((BYTE*)rect.pBits + y * rect.Pitch);
+        for (UINT x = 0; x < desc.Width; x++) {
+            DWORD pixel = row[x];
+            const BYTE r = (pixel >> 16) & 0xFF;
+            const BYTE g = (pixel >> 8) & 0xFF;
+            const BYTE b = pixel & 0xFF;
+            if (r <= tolerance && g <= tolerance && b <= tolerance) {
+                row[x] = 0x00000000;
+            }
+        }
+    }
+
+    tex->UnlockRect(0);
 }
 
 inline void ApplyPersonaBlueColorKey(LPDIRECT3DTEXTURE9 tex) {

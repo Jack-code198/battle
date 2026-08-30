@@ -1,10 +1,10 @@
 #include "Narukami.h"
-#include "../../ai.h"
-#include "../../config.h"
-#include "../../renderer.h"
-#include "../../game_logic.h"
-#include "../../input.h"
-#include "../../audio.h"
+#include "../../AI.h"
+#include "../../Config.h"
+#include "../../Renderer.h"
+#include "../../GameLogic.h"
+#include "../../Input.h"
+#include "../../Audio.h"
 #include <cmath>
 #include <optional>
 #include <stdio.h>
@@ -1958,6 +1958,16 @@ bool Narukami::IsPlayingResultPose() const {
 
 bool Narukami::IsInKnockdownReaction() const {
     return isHit || currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER;
+}
+
+void Narukami::SnapStandForUltimate() {
+    isHit = false;
+    hitStunTimer = 0;
+    verticalVelocity = 0.0f;
+    position.y = CHARACTER_GROUND_Y;
+    if (currentState == NARUKAMI_DAMAGE || currentState == NARUKAMI_RECOVER) {
+        CompleteToStance();
+    }
 }
 
 bool Narukami::IsInCombatAction() const {

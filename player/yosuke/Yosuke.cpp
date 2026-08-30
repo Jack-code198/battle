@@ -1,11 +1,11 @@
 #include "Yosuke.h"
-#include "../../ai.h"
-#include "../../config.h"
-#include "../../renderer.h"
-#include "../../game_logic.h"
-#include "../../input.h"
-#include "../../audio.h"
-#include "../../collision.h"
+#include "../../AI.h"
+#include "../../Config.h"
+#include "../../Renderer.h"
+#include "../../GameLogic.h"
+#include "../../Input.h"
+#include "../../Audio.h"
+#include "../../Collision.h"
 #include <cmath>
 #include <optional>
 #include <stdio.h>
@@ -48,6 +48,10 @@ constexpr int kMirageSlashDamage = 40;
 constexpr int kBraveBladeDamage = 55;
 constexpr int kGarudyneDamage = 70;
 constexpr int kFlyingKunaiDamage = 45;
+constexpr float kFlyingKunaiSpeed = 22.0f;
+constexpr float kFlyingKunaiHitRadius = 40.0f;
+constexpr float kFlyingKunaiSpawnForward = 36.0f;
+constexpr float kFlyingKunaiSpawnVertical = 20.0f;
 constexpr int kCrescentSlashDamage = 35;
 constexpr int kMoonsaultDamage = 40;
 
@@ -126,6 +130,13 @@ D3DXVECTOR3 GetEnemyHurtboxCenter(const Fighter& enemy) {
 
 D3DXVECTOR3 GetSkillEffectPos(const Fighter& enemy) {
     return GetEnemyHurtboxCenter(enemy);
+}
+
+D3DXVECTOR3 GetFlyingKunaiSpawnPos(const Yosuke& yosuke) {
+    return D3DXVECTOR3(
+        yosuke.GetPosition().x + (float)yosuke.GetFacingDirection() * kFlyingKunaiSpawnForward,
+        yosuke.GetPosition().y - kFlyingKunaiSpawnVertical,
+        0.0f);
 }
 
 D3DXVECTOR3 GetJiraiyaAtEnemyPos(const Fighter& enemy) {
@@ -249,6 +260,13 @@ bool IsSkillState(int state) {
         state == YOSUKE_MIRAGE_SLASH ||
         state == YOSUKE_BRAVE_BLADE ||
         state == YOSUKE_GARUDYNE;
+}
+
+bool CanUseYosukePersonaSkills(int state) {
+    return state == YOSUKE_STANCE ||
+        state == YOSUKE_IDLE ||
+        state == YOSUKE_WALK ||
+        state == YOSUKE_RUN;
 }
 
 void BuildAttackBox(
@@ -426,6 +444,17 @@ void ReleaseSheet(YosukeTexture& tex) {
 
 } // namespace
 
+static void YosukeTryUltimateSkillHit(Yosuke& attacker, Fighter& enemy, bool& hitFlag, int damage) {
+    if (hitFlag || !enemy.CanReceiveHit()) return;
+    DealSkillHit(attacker, enemy, damage);
+    hitFlag = true;
+}
+
+static void YosukePrepareUltimateTarget(Yosuke& attacker, Fighter& enemy) {
+    SnapFighterStandForUltimate(enemy);
+    PullEnemyForUltimate(attacker, enemy, true);
+}
+
 Yosuke::Yosuke()
     : currentFrame(0)
     , maxFrame(1)
@@ -454,6 +483,11 @@ Yosuke::Yosuke()
     , spaceChordBuffer(0)
     , spaceWasDown(false)
     , crescentButtonHeld(false)
+    , personaKey1Held(false)
+    , personaKey2Held(false)
+    , personaKey3Held(false)
+    , personaKey4Held(false)
+    , moonsaultButtonHeld(false)
 {
     characterId = Char_Yosuke;
     maxHealth = YOSUKE_MAX_HEALTH;
@@ -508,7 +542,9 @@ D3DCOLOR Yosuke::GetOverlayColor() const {
 }
 
 bool Yosuke::CanUseSpaceChord() const {
-    return spaceChordBuffer > 0;
+    return spaceChordBuffer > 0 ||
+        currentState == YOSUKE_JUMP ||
+        currentState == YOSUKE_GUARD_AIR;
 }
 
 void Yosuke::TickSpaceChordBuffer(bool isJumpPressed, int steps) {
@@ -530,8 +566,7 @@ bool Yosuke::IsHoldingAwayInput() const {
 }
 
 void Yosuke::UpdateLiveSkillTargets(Fighter& enemy) {
-    if (currentState == YOSUKE_FLYING_KUNAI ||
-        currentState == YOSUKE_PERSONA_JIRAIYA ||
+    if (currentState == YOSUKE_PERSONA_JIRAIYA ||
         currentState == YOSUKE_BRAVE_BLADE) {
         effectPos = GetSkillEffectPos(enemy);
     }
@@ -587,7 +622,7 @@ void Yosuke::BeginPersonaSummon() {
     effectFrame = 0;
     skillHit = false;
     if (Fighter* foe = GetOpponent(*this)) {
-        PullEnemyForUltimate(*this, *foe, true);
+        YosukePrepareUltimateTarget(*this, *foe);
     }
     EnterState(YOSUKE_PERSONA_SUMMON);
 }
@@ -605,6 +640,54 @@ void Yosuke::BeginGarudyne() {
     jiraiyaPos = GetJiraiyaBehindYosukePos(position, facingDirection);
     if (Fighter* foe = GetOpponent(*this)) {
         PullEnemyForUltimate(*this, *foe, true);
+    }
+}
+
+void Yosuke::BeginFlyingKunai(Fighter* opponent) {
+    showEffect = true;
+    effectFrame = 0;
+    personaAnimAccumulator = 0;
+    skillHit = false;
+    verticalVelocity = 0.0f;
+    jumpCount = 0;
+    jumpHorizontalSpeed = 0.0f;
+    position.y = CHARACTER_GROUND_Y;
+    effectPos = GetFlyingKunaiSpawnPos(*this);
+    flyingKunaiTargetPos = opponent ? GetSkillEffectPos(*opponent) : effectPos;
+    spaceChordBuffer = 0;
+    EnterState(YOSUKE_FLYING_KUNAI);
+}
+
+void Yosuke::UpdateFlyingKunaiProjectile(Fighter& enemy, int steps) {
+    flyingKunaiTargetPos = GetSkillEffectPos(enemy);
+
+    const float dx = flyingKunaiTargetPos.x - effectPos.x;
+    const float dy = flyingKunaiTargetPos.y - effectPos.y;
+    const float dist = sqrtf(dx * dx + dy * dy);
+    if (dist > 0.001f) {
+        const float travel = kFlyingKunaiSpeed * (float)steps * BATTLE_GAMEPLAY_SPEED;
+        const float step = (travel >= dist) ? dist : travel;
+        effectPos.x += (dx / dist) * step;
+        effectPos.y += (dy / dist) * step;
+    }
+
+    if (skillHit || enemy.isDead || enemy.IsPlayingResultPose() || !enemy.CanReceiveHit()) return;
+
+    const float hitDx = flyingKunaiTargetPos.x - effectPos.x;
+    const float hitDy = flyingKunaiTargetPos.y - effectPos.y;
+    const float hitDist = sqrtf(hitDx * hitDx + hitDy * hitDy);
+
+    AABB hitBox;
+    hitBox.width = kFlyingKunaiHitRadius;
+    hitBox.height = kFlyingKunaiHitRadius;
+    hitBox.x = effectPos.x - hitBox.width * 0.5f;
+    hitBox.y = effectPos.y - hitBox.height * 0.5f;
+
+    if (hitDist <= kFlyingKunaiHitRadius ||
+        CollisionHelper::AABBIntersect(hitBox, enemy.GetHurtbox())) {
+        DealSkillHit(*this, enemy, kFlyingKunaiDamage);
+        skillHit = true;
+        effectPos = flyingKunaiTargetPos;
     }
 }
 
@@ -1042,10 +1125,7 @@ void Yosuke::UpdateHuman(int steps) {
             effectFrame >= g_JiraiyaAttackEffect.maxFrame - 1;
 
         if (!skillHit && (jiraiyaFrame >= kSkillHitStartFrame || effectFrame >= kSkillHitStartFrame)) {
-            if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
-                DealSkillHit(*this, *opponent, kPersonaStrikeDamage);
-                skillHit = true;
-            }
+            YosukeTryUltimateSkillHit(*this, *opponent, skillHit, kPersonaStrikeDamage);
         }
 
         if (jiraiyaDone && effectDone) {
@@ -1058,25 +1138,40 @@ void Yosuke::UpdateHuman(int steps) {
     if (currentState == YOSUKE_FLYING_KUNAI) {
         maxFrame = GetMaxFrameForState(YOSUKE_FLYING_KUNAI);
         showEffect = true;
-        UpdateLiveSkillTargets(*opponent);
+        verticalVelocity = 0.0f;
+        position.y = CHARACTER_GROUND_Y;
+
+        const int effectMax = g_FlyingKunaiEffect.maxFrame;
+        bool bodyDone = false;
+        if (currentFrame < maxFrame - 1) {
+            bodyDone = AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kActionTicks, maxFrame);
+        }
+        else {
+            bodyDone = true;
+            currentFrame = maxFrame - 1;
+        }
+
+        UpdateFlyingKunaiProjectile(*opponent, animSteps);
 
         personaAnimAccumulator += animSteps;
         while (personaAnimAccumulator >= kPersonaEffectTicks) {
             personaAnimAccumulator -= kPersonaEffectTicks;
-            if (showEffect && g_FlyingKunaiEffect.maxFrame > 0 &&
-                effectFrame < g_FlyingKunaiEffect.maxFrame - 1) {
+            if (showEffect && effectMax > 0 && effectFrame < effectMax - 1) {
                 effectFrame++;
             }
         }
 
-        if (AdvanceOneShotFrame(animAccumulator, currentFrame, animSteps, kActionTicks, maxFrame)) {
+        const bool effectDone = effectMax < 1 || effectFrame >= effectMax - 1;
+        const bool passedTarget =
+            (facingDirection > 0)
+            ? (effectPos.x > flyingKunaiTargetPos.x + kFlyingKunaiHitRadius)
+            : (effectPos.x < flyingKunaiTargetPos.x - kFlyingKunaiHitRadius);
+
+        if (skillHit && effectDone) {
             CompleteToStance();
         }
-        else if (!skillHit && effectFrame >= kSkillHitStartFrame) {
-            if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
-                DealSkillHit(*this, *opponent, kFlyingKunaiDamage);
-                skillHit = true;
-            }
+        else if (!skillHit && bodyDone && passedTarget && effectDone) {
+            CompleteToStance();
         }
         UpdateScaledHurtbox();
         return;
@@ -1097,10 +1192,7 @@ void Yosuke::UpdateHuman(int steps) {
                 jiraiyaFrame = g_JiraiyaMirageSlash.maxFrame - 1;
             }
             if (!skillHit && currentFrame >= kSkillHitStartFrame) {
-                if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
-                    DealSkillHit(*this, *opponent, kMirageSlashDamage);
-                    skillHit = true;
-                }
+                YosukeTryUltimateSkillHit(*this, *opponent, skillHit, kMirageSlashDamage);
             }
         }
         UpdateScaledHurtbox();
@@ -1125,10 +1217,7 @@ void Yosuke::UpdateHuman(int steps) {
                 }
             }
             if (!skillHit && (jiraiyaFrame >= kSkillHitStartFrame || currentFrame >= kSkillHitStartFrame)) {
-                if (opponent->CanReceiveHit() && YosukeIsCloseForSkillHit(*this, *opponent)) {
-                    DealSkillHit(*this, *opponent, kBraveBladeDamage);
-                    skillHit = true;
-                }
+                YosukeTryUltimateSkillHit(*this, *opponent, skillHit, kBraveBladeDamage);
             }
         }
         UpdateScaledHurtbox();
@@ -1217,7 +1306,18 @@ void Yosuke::UpdateHuman(int steps) {
         bool isLeftPressed = IsGameKeyDown(DIK_LEFT) || IsGameKeyDown(DIK_A);
         bool isRightPressed = IsGameKeyDown(DIK_RIGHT) || IsGameKeyDown(DIK_D);
         bool isJumpPressed = IsGameKeyDown(DIK_SPACE);
+        bool isMoonsaultDown = IsGameKeyDown(DIK_E);
+        const bool isMoonsaultJustPressed = isMoonsaultDown && !moonsaultButtonHeld;
+        moonsaultButtonHeld = isMoonsaultDown;
         bool isAttackPressed = attackDownNow;
+
+        TickSpaceChordBuffer(isJumpPressed, steps);
+        const bool canUseSpaceChord = CanUseSpaceChord() || isJumpPressed;
+        if (isMoonsaultJustPressed && canUseSpaceChord && TryConsumeStamina(STAMINA_COST_ACTION)) {
+            BeginFlyingKunai(opponent);
+            UpdateScaledHurtbox();
+            return;
+        }
 
         if (isLeftPressed) {
             facingDirection = -1;
@@ -1327,77 +1427,87 @@ void Yosuke::UpdateHuman(int steps) {
     const bool isDashHeld = IsGameKeyDown(DIK_J);
     const bool isBackDashPressed = IsGameMouseDown(VK_RBUTTON) && IsHoldingAwayInput();
     const bool isGuardPressed = IsHoldingGuardInput(*this);
-    const bool isMoonsaultPressed = IsGameKeyDown(DIK_E);
+    const bool isMoonsaultDown = IsGameKeyDown(DIK_E);
+    const bool isMoonsaultJustPressed = isMoonsaultDown && !moonsaultButtonHeld;
+    moonsaultButtonHeld = isMoonsaultDown;
     const bool isCrescentDownNow = IsGameKeyDown(DIK_R);
     const bool isCrescentJustPressed = isCrescentDownNow && !crescentButtonHeld;
     crescentButtonHeld = isCrescentDownNow;
     const bool isAttackPressed = attackJustPressed;
-    const bool isKey1 = IsGameKeyDown(DIK_1);
-    const bool isKey2 = IsGameKeyDown(DIK_2);
-    const bool isKey3 = IsGameKeyDown(DIK_3);
-    const bool isKey4 = IsGameKeyDown(DIK_4);
+    const bool isKey1Down = IsGameKeyDown(DIK_1);
+    const bool isKey2Down = IsGameKeyDown(DIK_2);
+    const bool isKey3Down = IsGameKeyDown(DIK_3);
+    const bool isKey4Down = IsGameKeyDown(DIK_4);
+    const bool isKey1 = isKey1Down && !personaKey1Held;
+    const bool isKey2 = isKey2Down && !personaKey2Held;
+    const bool isKey3 = isKey3Down && !personaKey3Held;
+    const bool isKey4 = isKey4Down && !personaKey4Held;
+    personaKey1Held = isKey1Down;
+    personaKey2Held = isKey2Down;
+    personaKey3Held = isKey3Down;
+    personaKey4Held = isKey4Down;
 
     TickSpaceChordBuffer(isJumpPressed, steps);
     const bool canUseSpaceChord = CanUseSpaceChord() || isJumpPressed;
-    const bool isFlyingKunaiPressed = isMoonsaultPressed && canUseSpaceChord;
+    const bool isFlyingKunaiPressed = isMoonsaultJustPressed && canUseSpaceChord;
 
     const bool hasAnyInput = isMoving || isJumpPressed || isDashHeld || attackDownNow ||
-        isBackDashPressed || isGuardPressed || isMoonsaultPressed || isCrescentDownNow ||
-        isKey1 || isKey2 || isKey3 || isKey4;
+        isBackDashPressed || isGuardPressed || isMoonsaultDown || isCrescentDownNow ||
+        isKey1Down || isKey2Down || isKey3Down || isKey4Down;
 
     if (hasAnyInput) noInputFrames = 0;
     else if (currentState == YOSUKE_STANCE) noInputFrames += steps;
 
     int nextState = YOSUKE_STANCE;
 
-    if (isKey4 && TryConsumeSp(kSpCostGarudyne)) {
-        BeginGarudyne();
-        UpdateScaledHurtbox();
-        return;
-    }
-    if (isKey1 && TryConsumeSp(kSpCostPersona)) {
-        BeginPersonaSummon();
-        UpdateScaledHurtbox();
-        return;
-    }
-    if (isKey2 && TryConsumeSp(kSpCostMirage)) {
-        g_SoundManager.PlayPersonaSummonSfx();
-        showJiraiya = true;
-        jiraiyaFrame = 0;
-        personaAnimAccumulator = 0;
-        skillHit = false;
-        PullEnemyForUltimate(*this, *opponent, true);
-        jiraiyaPos = GetMirageSlashJiraiyaPos(*opponent, facingDirection);
-        EnterState(YOSUKE_MIRAGE_SLASH);
-        UpdateScaledHurtbox();
-        return;
-    }
-    if (isKey3 && TryConsumeSp(kSpCostBraveBlade)) {
-        g_SoundManager.PlayPersonaSummonSfx();
-        showJiraiya = true;
-        jiraiyaFrame = 0;
-        personaAnimAccumulator = 0;
-        skillHit = false;
-        PullEnemyForUltimate(*this, *opponent, true);
-        if (opponent) {
-            jiraiyaPos = GetJiraiyaAtEnemyPos(*opponent);
-            effectPos = GetSkillEffectPos(*opponent);
+    if (CanUseYosukePersonaSkills(currentState)) {
+        if (isKey4 && TryConsumeSp(kSpCostGarudyne)) {
+            BeginGarudyne();
+            UpdateScaledHurtbox();
+            return;
         }
-        EnterState(YOSUKE_BRAVE_BLADE);
-        UpdateScaledHurtbox();
-        return;
+        if (isKey1 && TryConsumeSp(kSpCostPersona)) {
+            BeginPersonaSummon();
+            UpdateScaledHurtbox();
+            return;
+        }
+        if (isKey2 && TryConsumeSp(kSpCostMirage)) {
+            g_SoundManager.PlayPersonaSummonSfx();
+            showJiraiya = true;
+            jiraiyaFrame = 0;
+            personaAnimAccumulator = 0;
+            skillHit = false;
+            if (opponent) {
+                YosukePrepareUltimateTarget(*this, *opponent);
+                jiraiyaPos = GetMirageSlashJiraiyaPos(*opponent, facingDirection);
+            }
+            EnterState(YOSUKE_MIRAGE_SLASH);
+            UpdateScaledHurtbox();
+            return;
+        }
+        if (isKey3 && TryConsumeSp(kSpCostBraveBlade)) {
+            g_SoundManager.PlayPersonaSummonSfx();
+            showJiraiya = true;
+            jiraiyaFrame = 0;
+            personaAnimAccumulator = 0;
+            skillHit = false;
+            if (opponent) {
+                YosukePrepareUltimateTarget(*this, *opponent);
+                jiraiyaPos = GetJiraiyaAtEnemyPos(*opponent);
+                effectPos = GetSkillEffectPos(*opponent);
+            }
+            EnterState(YOSUKE_BRAVE_BLADE);
+            UpdateScaledHurtbox();
+            return;
+        }
     }
 
     if (isFlyingKunaiPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
-        nextState = YOSUKE_FLYING_KUNAI;
-        showEffect = true;
-        effectFrame = 0;
-        personaAnimAccumulator = 0;
-        skillHit = false;
-        effectPos = GetSkillEffectPos(*opponent);
-        spaceChordBuffer = 0;
+        BeginFlyingKunai(opponent);
+        UpdateScaledHurtbox();
+        return;
     }
-    else if (isMoonsaultPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
+    else if (isMoonsaultJustPressed && TryConsumeStamina(STAMINA_COST_ACTION)) {
         nextState = YOSUKE_MOONSAULT;
         showJiraiya = false;
     }
@@ -1473,6 +1583,11 @@ void Yosuke::UpdateHuman(int steps) {
 void Yosuke::SyncHeldInputState() {
     attackButtonHeld = IsGameMouseDown(VK_LBUTTON);
     crescentButtonHeld = IsGameKeyDown(DIK_R);
+    moonsaultButtonHeld = IsGameKeyDown(DIK_E);
+    personaKey1Held = IsGameKeyDown(DIK_1);
+    personaKey2Held = IsGameKeyDown(DIK_2);
+    personaKey3Held = IsGameKeyDown(DIK_3);
+    personaKey4Held = IsGameKeyDown(DIK_4);
 }
 
 void Yosuke::Update() {
@@ -1576,8 +1691,7 @@ void Yosuke::RenderSkillBackdropBeforeOpponent(LPD3DXSPRITE sprite) {
     const D3DCOLOR color = ApplySpriteTint(D3DCOLOR_XRGB(255, 255, 255), GetSpriteTint());
 
     if (showEffect && currentState == YOSUKE_FLYING_KUNAI && g_FlyingKunaiEffect.texture) {
-        DrawCenteredLayer(sprite, g_FlyingKunaiEffect, effectFrame, effectPos,
-            PERSONA_EFFECT_SCALE, color);
+        DrawSkillEffectLayer(sprite, g_FlyingKunaiEffect, effectFrame, effectPos, facingDirection, color);
         return;
     }
 
@@ -1859,6 +1973,16 @@ bool Yosuke::IsInKnockdownReaction() const {
     return isHit || currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER;
 }
 
+void Yosuke::SnapStandForUltimate() {
+    isHit = false;
+    hitStunTimer = 0;
+    verticalVelocity = 0.0f;
+    position.y = CHARACTER_GROUND_Y;
+    if (currentState == YOSUKE_DAMAGE || currentState == YOSUKE_RECOVER) {
+        CompleteToStance();
+    }
+}
+
 bool Yosuke::IsInCombatAction() const {
     switch (currentState) {
     case YOSUKE_ATTACK:
@@ -1901,6 +2025,11 @@ void Yosuke::Reset() {
     dashHasHit = false;
     attackButtonHeld = false;
     crescentButtonHeld = false;
+    moonsaultButtonHeld = false;
+    personaKey1Held = false;
+    personaKey2Held = false;
+    personaKey3Held = false;
+    personaKey4Held = false;
     skillHit = false;
     jumpSpaceWasReleased = true;
     personaAnimAccumulator = 0;

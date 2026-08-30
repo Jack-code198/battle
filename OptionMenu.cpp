@@ -1,6 +1,6 @@
-#include "optionsMenu.h"
-#include "input.h"
-#include "audio.h"
+#include "OptionMenu.h"
+#include "Input.h"
+#include "Audio.h"
 #include <cstdio>
 
 static ID3DXFont* g_OptionsTitleFont = nullptr;

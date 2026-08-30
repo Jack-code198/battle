@@ -1,6 +1,6 @@
-#include "creditsScreen.h"
-#include "input.h"
-#include "audio.h"
+#include "CreditsScreen.h"
+#include "Input.h"
+#include "Audio.h"
 #include "MainMenu.h"
 
 static ID3DXFont* g_CreditsTitleFont = nullptr;

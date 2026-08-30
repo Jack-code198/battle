@@ -1,6 +1,6 @@
 #pragma once
 #include "../Fighter.h"
-#include "../../config.h"
+#include "../../Config.h"
 
 // Yu Narukami fighter (OO subclass of Fighter).
 // Compact Makoto-style locomotion/melee with Zio / Ziodyne persona skills.
@@ -106,6 +106,7 @@ public:
     void BeginDefeatPose() override;
     bool IsPlayingResultPose() const override;
     bool IsInKnockdownReaction() const override;
+    void SnapStandForUltimate();
     bool IsInCombatAction() const override;
     bool IsInGuardState() const override;
     void HoldGuardState(bool airborne) override;

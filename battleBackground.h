@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Layered battle backgrounds with parallax tied to the human-controlled fighter.
 

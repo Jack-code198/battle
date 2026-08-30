@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Practical-style physics ball: rotation + thrust, friction, wall bounce, elastic collision.
 class Ball {

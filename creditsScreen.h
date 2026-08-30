@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // End credits: scrolling roll, then Thanks/fin fade sequence. Esc returns to main menu.
 

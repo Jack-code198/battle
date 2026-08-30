@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 #include "FrameTimer.h"
 #include "player/Fighter.h"
 #include "player/CharacterId.h"
@@ -14,6 +14,7 @@ extern FrameTimer g_GameTimer;
 extern Fighter* g_Player1;
 extern Fighter* g_Player2;
 extern bool g_ShowDebugHitboxes;
+extern bool g_SuppressBattleDebugOverlay;
 
 extern CharacterId g_SelectedP1;
 extern CharacterId g_SelectedP2;
@@ -27,8 +28,11 @@ extern BattleMode g_SelectedBattleMode;
 bool IsTutorialBattleMode();
 bool IsTutorialSandbagMode();
 bool IsTutorialCpuAiEnabled();
+bool IsTutorialInfiniteHpSpEnabled();
 void ToggleTutorialCpuAi();
+void ToggleTutorialInfiniteHpSp();
 void ResetTutorialCpuAi();
+void ResetTutorialInfiniteHpSp();
 bool ShouldFighterDieOnZeroHealth();
 void DealMeleeHit(Fighter& attacker, Fighter& defender, int damage);
 void DealSkillHit(Fighter& attacker, Fighter& defender, int damage);
@@ -36,8 +40,9 @@ void NotifyFighterDamageApplied(Fighter& victim, int appliedDamage);
 int GetP1HitCombo();
 void BeginBattleLogicFrame();
 void ApplyTutorialModePerks(int steps);
+void RefillTutorialFighters();
 void PositionFightersAtDefaultSpawn();
-#include "tutorial_guide.h"
+#include "TutorialGuide.h"
 
 Fighter* CreateFighter(CharacterId id, int slot, bool humanControlled);
 void DestroyFighters();
@@ -48,6 +53,9 @@ Fighter* GetOpponent(const Fighter& self);
 
 // Ultimate cinematic: forcibly pull the foe in front of the attacker (X + optional ground).
 void PullEnemyForUltimate(Fighter& attacker, Fighter& enemy, bool pullToGround = true);
+
+// All-out / cinematic hit: snap a downed foe upright so the effect can connect.
+void SnapFighterStandForUltimate(Fighter& fighter);
 
 // Body push: keep fighters from walking through each other (all characters).
 void ResolveFighterBodyOverlap(Fighter& a, Fighter& b);

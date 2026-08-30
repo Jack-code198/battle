@@ -1,7 +1,7 @@
 #pragma once
 #include <d3dx9.h>
-#include "collision.h"
-#include "config.h"
+#include "Collision.h"
+#include "Config.h"
 
 // =============================================================================
 // Physics module (BMCS2224)

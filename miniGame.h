@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 bool LoadMiniGameAssets();
 void CleanUpMiniGameAssets();

@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "Config.h"
 
 // Player select screen: two-phase P1/P2 roster pick with keyboard and mouse.
 

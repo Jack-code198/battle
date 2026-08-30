@@ -1,6 +1,6 @@
 #include "fmod.hpp"
 #include "fmod_errors.h"
-#include "audio.h"
+#include "Audio.h"
 
 // =============================================================================
 // Sound module (BMCS2224) — FMOD lifecycle.
