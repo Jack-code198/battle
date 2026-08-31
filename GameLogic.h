@@ -116,6 +116,7 @@ int GetGuardAwayDirection(const Fighter& self);
 int GetGuardTowardDirection(const Fighter& self);
 bool IsHoldingBackInput(const Fighter& self);
 bool IsHoldingGuardInput(const Fighter& self);
+void ApplyGuardFacingTowardOpponent(Fighter& self);
 float ComputeSmoothedLocomotionSpeed(int baseVelocity, bool wantsRun, float& runBlend, int steps);
 bool ShouldUseRunLocomotion(float runBlend);
 bool IsFighterAirborne(const Fighter& self);

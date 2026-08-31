@@ -724,6 +724,12 @@ bool IsHoldingGuardInput(const Fighter& self) {
     return IsHoldingBackInput(self) && IsGameKeyDown(DIK_S);
 }
 
+void ApplyGuardFacingTowardOpponent(Fighter& self) {
+    if (IsHoldingGuardInput(self) || self.IsInGuardState()) {
+        self.facingDirection = GetGuardTowardDirection(self);
+    }
+}
+
 float ComputeSmoothedLocomotionSpeed(int baseVelocity, bool wantsRun, float& runBlend, int steps) {
     const float target = wantsRun ? 1.0f : 0.0f;
     const float delta = FIGHTER_RUN_BLEND_RATE * (float)steps;

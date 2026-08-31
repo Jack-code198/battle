@@ -860,6 +860,7 @@ void Joker::UpdateHuman(int steps) {
             facingDirection = 1;
         }
     }
+    ApplyGuardFacingTowardOpponent(*this);
 
     if (isRunning && isMoving) {
         if (!DrainStaminaWhileRunning(animSteps)) {

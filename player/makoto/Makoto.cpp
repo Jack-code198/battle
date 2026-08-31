@@ -773,6 +773,7 @@ void Makoto::Update() {
     else if (move.rightHeld && !move.leftHeld) {
         facingDirection = 1;
     }
+    ApplyGuardFacingTowardOpponent(*this);
 
     const bool wantsRun = isRunning && isMoving;
     if (wantsRun) {
@@ -784,7 +785,7 @@ void Makoto::Update() {
         RegenStamina(animSteps);
     }
     const float currentVelocity = ComputeSmoothedLocomotionSpeed(
-        velocity, isRunning && isMoving, runBlend, steps);
+        velocity, wantsRun, runBlend, steps);
     const bool useRunAnim = ShouldUseRunLocomotion(runBlend);
 
     if (AllowsMakotoMovement(currentState, isSuperMoveActive) &&

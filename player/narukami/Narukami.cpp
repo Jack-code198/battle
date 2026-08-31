@@ -1023,6 +1023,7 @@ void Narukami::UpdateHuman(int steps) {
     else if (move.rightHeld && !move.leftHeld) {
         facingDirection = 1;
     }
+    ApplyGuardFacingTowardOpponent(*this);
 
     if (isRunning && isMoving) {
         if (!DrainStaminaWhileRunning(animSteps)) {
